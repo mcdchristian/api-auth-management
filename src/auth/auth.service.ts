@@ -34,11 +34,17 @@ export class AuthService {
     await this.usersService.updateRefreshToken(userId, null);
   }
 
-  async refreshTokens(userId: string, refreshToken: string) {
-    const user = await this.usersService.findByIdWithRefreshToken(userId);
-    if (!user || !user.refreshToken) {
-      throw new ForbiddenException('Access Denied');
-    }
+  async refreshTokens(refreshToken: string) {
+    try {
+      const payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: this.configService.get<string>('jwt.refreshSecret') as string,
+      });
+      
+      const userId = payload.sub;
+      const user = await this.usersService.findByIdWithRefreshToken(userId);
+      if (!user || !user.refreshToken) {
+        throw new ForbiddenException('Access Denied');
+      }
 
     const refreshTokenMatches = await bcrypt.compare(refreshToken, user.refreshToken);
     if (!refreshTokenMatches) {
@@ -48,6 +54,9 @@ export class AuthService {
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
     return tokens;
+    } catch (e) {
+      throw new ForbiddenException('Access Denied');
+    }
   }
 
   private async generateTokens(userId: string, email: string, role: string) {

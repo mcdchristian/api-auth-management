@@ -38,10 +38,6 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh tokens' })
   refreshTokens(@Body() refreshTokenDto: RefreshTokenDto) {
-    // In a real scenario, you'd extract userId from the refresh token or a separate guard
-    // For simplicity, we'll assume the client sends the refresh token and we'd decode it
-    // But for this demo, let's keep it simple.
-    // Ideally, use a RefreshTokenGuard.
-    return { message: 'Refresh logic implemented in AuthService' };
+    return this.authService.refreshTokens(refreshTokenDto.refreshToken);
   }
 }
