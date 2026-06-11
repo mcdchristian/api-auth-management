@@ -1,5 +1,13 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+} from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
+import { Exclude } from 'class-transformer';
 
 export enum UserRole {
   USER = 'user',
@@ -18,6 +26,7 @@ export class User {
   email: string;
 
   @Column({ select: false }) // Don't return password by default
+  @Exclude()
   password: string;
 
   @Column({
@@ -33,11 +42,18 @@ export class User {
   isActive: boolean;
 
   @Column({ nullable: true, select: false })
+  @Exclude()
   refreshToken: string;
 
   @CreateDateColumn()
+  @ApiProperty()
   createdAt: Date;
 
   @UpdateDateColumn()
+  @ApiProperty()
   updatedAt: Date;
+
+  @DeleteDateColumn()
+  @Exclude()
+  deletedAt?: Date;
 }
