@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +14,8 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
@@ -24,18 +27,24 @@ export class AuthService {
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     // Store the refresh token hash in database
     await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
+    this.logger.log(`User registered: ${user.email}`);
     return tokens;
   }
 
   async login(loginDto: LoginDto) {
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user || !(await bcrypt.compare(loginDto.password, user.password))) {
+      this.logger.warn(`Failed login attempt for email: ${loginDto.email}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     if (!user.isActive) {
+      this.logger.warn(
+        `Login attempt for deactivated account: ${loginDto.email}`,
+      );
       throw new ForbiddenException('Account is deactivated');
     }
+    this.logger.log(`User logged in: ${user.email}`);
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
@@ -101,14 +110,16 @@ export class AuthService {
       this.configService.get<string>('jwt.refreshExpiration') ?? '7d';
 
     const [at, rt] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.secret'),
-        expiresIn: accessExpiration as any,
-      }),
+        secret: this.configService.get<string>('jwt.secret') as string,
+        expiresIn: accessExpiration,
+      } as any), // eslint-disable-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.refreshSecret'),
-        expiresIn: refreshExpiration as any,
-      }),
+        secret: this.configService.get<string>('jwt.refreshSecret') as string,
+        expiresIn: refreshExpiration,
+      } as any), // eslint-disable-line @typescript-eslint/no-explicit-any
     ]);
 
     return {
