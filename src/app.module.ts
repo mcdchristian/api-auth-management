@@ -9,6 +9,7 @@ import { HealthModule } from './health/health.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { CommonModule } from './common/common.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -27,6 +28,7 @@ import configuration from './config/configuration';
         },
       ],
     }),
+    CommonModule,
     DatabaseModule,
     AuthModule,
     UsersModule,
