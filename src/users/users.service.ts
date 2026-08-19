@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { AuditService } from '../common/services/audit.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -17,27 +18,47 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private auditService: AuditService,
   ) {}
 
   async create(userData: Partial<User>): Promise<User> {
-    const existingUser = await this.usersRepository.findOne({
-      where: { email: userData.email },
-    });
-    if (existingUser) {
-      throw new ConflictException('Email already exists');
+    try {
+      const existingUser = await this.usersRepository.findOne({
+        where: { email: userData.email },
+      });
+      if (existingUser) {
+        throw new ConflictException('Email already exists');
+      }
+
+      if (!userData.password) {
+        throw new BadRequestException('Password is required');
+      }
+
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const user = this.usersRepository.create({
+        ...userData,
+        password: hashedPassword,
+      });
+
+      const savedUser = await this.usersRepository.save(user);
+
+      this.auditService.logUserEvent({
+        userId: savedUser.id,
+        userEmail: savedUser.email,
+        action: 'user_created',
+        status: 'success',
+      });
+
+      return savedUser;
+    } catch (error) {
+      this.auditService.logUserEvent({
+        userId: 'new',
+        userEmail: userData.email || 'unknown',
+        action: 'user_created',
+        status: 'failure',
+      });
+      throw error;
     }
-
-    if (!userData.password) {
-      throw new BadRequestException('Password is required');
-    }
-
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
-    const user = this.usersRepository.create({
-      ...userData,
-      password: hashedPassword,
-    });
-
-    return this.usersRepository.save(user);
   }
 
   async findByEmail(email: string): Promise<User | undefined> {
@@ -96,10 +117,19 @@ export class UsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
+    const emailBefore = user.email;
+    const roleBefore = user.role;
+
     // Check for email uniqueness if email is being changed
     if (updateData.email && updateData.email !== user.email) {
       const existingUser = await this.findByEmail(updateData.email);
       if (existingUser) {
+        this.auditService.logUserEvent({
+          userId: id,
+          userEmail: emailBefore,
+          action: 'user_updated',
+          status: 'failure',
+        });
         throw new ConflictException('Email already in use');
       }
     }
@@ -109,12 +139,45 @@ export class UsersService {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
 
-    await this.usersRepository.update(id, updateData);
-    const updatedUser = await this.findById(id);
-    if (!updatedUser) {
-      throw new NotFoundException(`User with ID ${id} not found after update`);
+    try {
+      await this.usersRepository.update(id, updateData);
+      const updatedUser = await this.findById(id);
+      if (!updatedUser) {
+        throw new NotFoundException(`User with ID ${id} not found after update`);
+      }
+
+      // Check if role changed
+      if (updateData.role && updateData.role !== roleBefore) {
+        this.auditService.logUserEvent({
+          userId: id,
+          userEmail: updatedUser.email,
+          action: 'role_changed',
+          changes: { from: roleBefore, to: updateData.role },
+          status: 'success',
+        });
+      } else {
+        this.auditService.logUserEvent({
+          userId: id,
+          userEmail: updatedUser.email,
+          action: 'user_updated',
+          changes: Object.keys(updateData).reduce((acc, key) => {
+            if (key !== 'password') acc[key] = (updateData as any)[key];
+            return acc;
+          }, {} as any),
+          status: 'success',
+        });
+      }
+
+      return updatedUser;
+    } catch (error) {
+      this.auditService.logUserEvent({
+        userId: id,
+        userEmail: emailBefore,
+        action: 'user_updated',
+        status: 'failure',
+      });
+      throw error;
     }
-    return updatedUser;
   }
 
   async remove(id: string): Promise<void> {
@@ -122,8 +185,23 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
-    // Soft delete — sets deletedAt timestamp instead of removing the row
-    await this.usersRepository.softDelete(id);
+    try {
+      await this.usersRepository.softDelete(id);
+      this.auditService.logUserEvent({
+        userId: id,
+        userEmail: user.email,
+        action: 'user_deleted',
+        status: 'success',
+      });
+    } catch (error) {
+      this.auditService.logUserEvent({
+        userId: id,
+        userEmail: user.email,
+        action: 'user_deleted',
+        status: 'failure',
+      });
+      throw error;
+    }
   }
 
   /**

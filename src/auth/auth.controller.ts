@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Patch,
+  Ip,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -22,6 +23,11 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import type { AuthenticatedUser } from './interfaces/jwt-payload.interface';
 import { Throttle } from '@nestjs/throttler';
+import { AuthThrottle } from '../common/decorators/throttle.decorator';
+import {
+  AuthSuccessResponse,
+  AuthErrorResponses,
+} from '../common/swagger/responses.swagger';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -29,32 +35,22 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @AuthThrottle()
   @ApiOperation({ summary: 'Register a new user' })
-  @ApiResponse({
-    status: 201,
-    description: 'User registered successfully, returns tokens.',
-  })
-  @ApiResponse({ status: 409, description: 'Email already exists.' })
-  @ApiResponse({ status: 400, description: 'Validation error.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  @AuthSuccessResponse()
+  @AuthErrorResponses()
+  register(@Body() registerDto: RegisterDto, @Ip() ip: string) {
+    return this.authService.register(registerDto, ip);
   }
 
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'User login' })
-  @ApiResponse({
-    status: 200,
-    description: 'Login successful, returns tokens.',
-  })
-  @ApiResponse({ status: 401, description: 'Invalid credentials.' })
-  @ApiResponse({ status: 403, description: 'Account deactivated.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  @AuthSuccessResponse()
+  @AuthErrorResponses()
+  login(@Body() loginDto: LoginDto, @Ip() ip: string) {
+    return this.authService.login(loginDto, ip);
   }
 
   @Post('logout')
