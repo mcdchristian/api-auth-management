@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { AuditService } from '../common/services/audit.service';
 import { UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { UserRole } from '../users/entities/user.entity';
 import * as bcrypt from 'bcrypt';
@@ -21,6 +22,7 @@ const mockUsersService = () => ({
 const mockJwtService = () => ({
   signAsync: jest.fn(),
   verifyAsync: jest.fn(),
+  decode: jest.fn(),
 });
 
 const mockConfigService = () => ({
@@ -33,6 +35,11 @@ const mockConfigService = () => ({
     };
     return config[key];
   }),
+});
+
+const mockAuditService = () => ({
+  logAuthEvent: jest.fn(),
+  logUserEvent: jest.fn(),
 });
 
 describe('AuthService', () => {
@@ -55,6 +62,7 @@ describe('AuthService', () => {
         { provide: UsersService, useFactory: mockUsersService },
         { provide: JwtService, useFactory: mockJwtService },
         { provide: ConfigService, useFactory: mockConfigService },
+        { provide: AuditService, useFactory: mockAuditService },
       ],
     }).compile();
 

@@ -25,11 +25,14 @@ import { UserRole } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateProfileDto } from '../auth/dto/update-profile.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { ApiThrottle } from '../common/decorators/throttle.decorator';
+import { UserProfileResponse } from '../common/swagger/responses.swagger';
 
 @ApiTags('Users')
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
+@ApiThrottle()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
@@ -45,7 +48,7 @@ export class UsersController {
 
   @Get('profile')
   @ApiOperation({ summary: 'Get current user profile' })
-  @ApiResponse({ status: 200, description: 'Current user profile data.' })
+  @UserProfileResponse()
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   getProfile(@CurrentUser() user: AuthenticatedUser) {
     return this.usersService.findById(user.id);
@@ -53,7 +56,7 @@ export class UsersController {
 
   @Patch('profile')
   @ApiOperation({ summary: 'Update own profile (email only)' })
-  @ApiResponse({ status: 200, description: 'Profile updated successfully.' })
+  @UserProfileResponse()
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 409, description: 'Email already in use.' })
   updateProfile(
