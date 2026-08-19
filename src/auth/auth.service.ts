@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
+import { AuditService } from '../common/services/audit.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -20,21 +21,46 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private auditService: AuditService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
-    const user = await this.usersService.create(registerDto);
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
-    // Store the refresh token hash in database
-    await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
-    this.logger.log(`User registered: ${user.email}`);
-    return tokens;
+  async register(registerDto: RegisterDto, ipAddress?: string) {
+    try {
+      const user = await this.usersService.create(registerDto);
+      const tokens = await this.generateTokens(user.id, user.email, user.role);
+      // Store the refresh token hash in database
+      await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
+      this.logger.log(`User registered: ${user.email}`);
+      this.auditService.logAuthEvent({
+        email: user.email,
+        action: 'register',
+        status: 'success',
+        ipAddress,
+      });
+      return tokens;
+    } catch (error) {
+      this.auditService.logAuthEvent({
+        email: registerDto.email,
+        action: 'register',
+        status: 'failure',
+        reason: error instanceof Error ? error.message : String(error),
+        ipAddress,
+      });
+      throw error;
+    }
   }
 
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, ipAddress?: string) {
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user || !(await bcrypt.compare(loginDto.password, user.password))) {
       this.logger.warn(`Failed login attempt for email: ${loginDto.email}`);
+      this.auditService.logAuthEvent({
+        email: loginDto.email,
+        action: 'login',
+        status: 'failure',
+        reason: 'Invalid credentials',
+        ipAddress,
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -42,9 +68,22 @@ export class AuthService {
       this.logger.warn(
         `Login attempt for deactivated account: ${loginDto.email}`,
       );
+      this.auditService.logAuthEvent({
+        email: loginDto.email,
+        action: 'login',
+        status: 'failure',
+        reason: 'Account is deactivated',
+        ipAddress,
+      });
       throw new ForbiddenException('Account is deactivated');
     }
     this.logger.log(`User logged in: ${user.email}`);
+    this.auditService.logAuthEvent({
+      email: user.email,
+      action: 'login',
+      status: 'success',
+      ipAddress,
+    });
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
@@ -52,7 +91,15 @@ export class AuthService {
   }
 
   async logout(userId: string) {
+    const user = await this.usersService.findById(userId);
     await this.usersService.updateRefreshToken(userId, null);
+    if (user) {
+      this.auditService.logAuthEvent({
+        email: user.email,
+        action: 'logout',
+        status: 'success',
+      });
+    }
     return { message: 'Logged out successfully' };
   }
 
@@ -81,8 +128,31 @@ export class AuthService {
 
       const tokens = await this.generateTokens(user.id, user.email, user.role);
       await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
+
+      this.auditService.logAuthEvent({
+        email: user.email,
+        action: 'token_refresh',
+        status: 'success',
+      });
+
       return tokens;
     } catch (e) {
+      // Get the email from token if possible to log failure
+      let email = 'unknown';
+      try {
+        const decoded = this.jwtService.decode(refreshToken) as any;
+        if (decoded && decoded.email) {
+          email = decoded.email;
+        }
+      } catch {}
+
+      this.auditService.logAuthEvent({
+        email,
+        action: 'token_refresh',
+        status: 'failure',
+        reason: e instanceof Error ? e.message : String(e),
+      });
+
       if (e instanceof ForbiddenException) throw e;
       throw new ForbiddenException('Access Denied');
     }
@@ -93,12 +163,29 @@ export class AuthService {
     currentPassword: string,
     newPassword: string,
   ): Promise<{ message: string }> {
-    await this.usersService.changePassword(
-      userId,
-      currentPassword,
-      newPassword,
-    );
-    return { message: 'Password changed successfully' };
+    const user = await this.usersService.findById(userId);
+    const email = user ? user.email : 'unknown';
+    try {
+      await this.usersService.changePassword(
+        userId,
+        currentPassword,
+        newPassword,
+      );
+      this.auditService.logAuthEvent({
+        email,
+        action: 'password_change',
+        status: 'success',
+      });
+      return { message: 'Password changed successfully' };
+    } catch (error) {
+      this.auditService.logAuthEvent({
+        email,
+        action: 'password_change',
+        status: 'failure',
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   private async generateTokens(userId: string, email: string, role: string) {
