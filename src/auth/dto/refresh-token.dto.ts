@@ -9,5 +9,5 @@ export class RefreshTokenDto {
   @IsString({ message: 'Refresh token must be a string' })
   @IsNotEmpty({ message: 'Refresh token is required' })
   @MaxLength(2048, { message: 'Refresh token is too long' })
-  refreshToken: string;
+  refreshToken!: string;
 }

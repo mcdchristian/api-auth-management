@@ -19,15 +19,15 @@ export enum UserRole {
 export class User {
   @PrimaryGeneratedColumn('uuid')
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
-  id: string;
+  id!: string;
 
   @Column({ unique: true })
   @ApiProperty({ example: 'john.doe@example.com' })
-  email: string;
+  email!: string;
 
   @Column({ select: false }) // Don't return password by default
   @Exclude()
-  password: string;
+  password!: string;
 
   @Column({
     type: 'enum',
@@ -35,11 +35,11 @@ export class User {
     default: UserRole.USER,
   })
   @ApiProperty({ enum: UserRole, default: UserRole.USER })
-  role: UserRole;
+  role!: UserRole;
 
   @Column({ default: true })
   @ApiProperty({ example: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   @Column({ type: 'text', nullable: true, select: false })
   @Exclude()
@@ -47,11 +47,11 @@ export class User {
 
   @CreateDateColumn()
   @ApiProperty()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
   @ApiProperty()
-  updatedAt: Date;
+  updatedAt!: Date;
 
   @DeleteDateColumn()
   @Exclude()

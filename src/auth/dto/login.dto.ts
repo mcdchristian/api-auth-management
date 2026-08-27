@@ -17,7 +17,7 @@ export class LoginDto {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return value;
   })
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: 'SecurePass123!',
@@ -26,5 +26,5 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })
   @MaxLength(128)
-  password: string;
+  password!: string;
 }

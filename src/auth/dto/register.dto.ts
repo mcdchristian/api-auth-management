@@ -24,7 +24,7 @@ export class RegisterDto {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return value;
   })
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: 'SecurePass123!',
@@ -40,7 +40,7 @@ export class RegisterDto {
     message:
       'Password must contain uppercase, lowercase, number, and special character',
   })
-  password: string;
+  password!: string;
 
   // Role is intentionally NOT exposed here.
   // New users always register as UserRole.USER.

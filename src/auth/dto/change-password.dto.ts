@@ -15,7 +15,7 @@ export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty({ message: 'Current password is required' })
   @MaxLength(128)
-  currentPassword: string;
+  currentPassword!: string;
 
   @ApiProperty({
     description:
@@ -31,5 +31,5 @@ export class ChangePasswordDto {
     message:
       'Password must contain uppercase, lowercase, number, and special character',
   })
-  newPassword: string;
+  newPassword!: string;
 }
