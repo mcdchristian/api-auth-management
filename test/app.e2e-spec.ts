@@ -64,7 +64,9 @@ describe('App & Authentication (e2e)', () => {
       expect(response.body).toHaveProperty('access_token');
       expect(response.body).toHaveProperty('refresh_token');
 
-      const user = await usersRepository.findOne({ where: { email: testEmail } });
+      const user = await usersRepository.findOne({
+        where: { email: testEmail },
+      });
       expect(user).toBeDefined();
       if (user) {
         createdUserId = user.id;
@@ -104,8 +106,12 @@ describe('App & Authentication (e2e)', () => {
       expect(response.body).toHaveProperty('access_token');
       expect(response.body).toHaveProperty('refresh_token');
 
-      accessToken = response.body.access_token;
-      refreshToken = response.body.refresh_token;
+      const tokens = response.body as {
+        access_token: string;
+        refresh_token: string;
+      };
+      accessToken = tokens.access_token;
+      refreshToken = tokens.refresh_token;
     });
 
     it('POST /api/v1/auth/login - failure (incorrect password)', async () => {
@@ -129,8 +135,12 @@ describe('App & Authentication (e2e)', () => {
       expect(response.body).toHaveProperty('access_token');
       expect(response.body).toHaveProperty('refresh_token');
 
-      accessToken = response.body.access_token;
-      refreshToken = response.body.refresh_token;
+      const tokens = response.body as {
+        access_token: string;
+        refresh_token: string;
+      };
+      accessToken = tokens.access_token;
+      refreshToken = tokens.refresh_token;
     });
   });
 

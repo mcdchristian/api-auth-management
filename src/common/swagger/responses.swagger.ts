@@ -1,27 +1,6 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiResponse } from '@nestjs/swagger';
 
-export class TokenResponse {
-  access_token: string;
-  refresh_token: string;
-}
-
-export class UserResponse {
-  id: string;
-  email: string;
-  role: string;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export class ErrorResponse {
-  statusCode: number;
-  message: string | string[];
-  error: string;
-  timestamp: string;
-}
-
 /**
  * API response for successful authentication
  */

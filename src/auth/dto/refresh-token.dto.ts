@@ -1,9 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class RefreshTokenDto {
-  @ApiProperty({ example: 'your-refresh-token-here' })
-  @IsString()
-  @IsNotEmpty()
+  @ApiProperty({
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+    description: 'Valid JWT refresh token',
+  })
+  @IsString({ message: 'Refresh token must be a string' })
+  @IsNotEmpty({ message: 'Refresh token is required' })
+  @MaxLength(2048, { message: 'Refresh token is too long' })
   refreshToken: string;
 }

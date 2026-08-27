@@ -86,7 +86,7 @@ export class UsersService {
       hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
     }
     await this.usersRepository.update(userId, {
-      refreshToken: hashedRefreshToken as string,
+      refreshToken: hashedRefreshToken,
     });
   }
 
@@ -143,7 +143,9 @@ export class UsersService {
       await this.usersRepository.update(id, updateData);
       const updatedUser = await this.findById(id);
       if (!updatedUser) {
-        throw new NotFoundException(`User with ID ${id} not found after update`);
+        throw new NotFoundException(
+          `User with ID ${id} not found after update`,
+        );
       }
 
       // Check if role changed
@@ -156,14 +158,17 @@ export class UsersService {
           status: 'success',
         });
       } else {
+        const changes: Record<string, unknown> = {};
+        for (const key of Object.keys(updateData)) {
+          if (key !== 'password') {
+            changes[key] = (updateData as Record<string, unknown>)[key];
+          }
+        }
         this.auditService.logUserEvent({
           userId: id,
           userEmail: updatedUser.email,
           action: 'user_updated',
-          changes: Object.keys(updateData).reduce((acc, key) => {
-            if (key !== 'password') acc[key] = (updateData as any)[key];
-            return acc;
-          }, {} as any),
+          changes,
           status: 'success',
         });
       }
