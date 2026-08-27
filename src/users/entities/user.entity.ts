@@ -41,9 +41,9 @@ export class User {
   @ApiProperty({ example: true })
   isActive: boolean;
 
-  @Column({ nullable: true, select: false })
+  @Column({ type: 'text', nullable: true, select: false })
   @Exclude()
-  refreshToken: string;
+  refreshToken: string | null;
 
   @CreateDateColumn()
   @ApiProperty()
