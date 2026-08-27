@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../common/services/audit.service';
@@ -137,14 +138,11 @@ export class AuthService {
 
       return tokens;
     } catch (e) {
-      // Get the email from token if possible to log failure
       let email = 'unknown';
-      try {
-        const decoded = this.jwtService.decode(refreshToken) as any;
-        if (decoded && decoded.email) {
-          email = decoded.email;
-        }
-      } catch {}
+      const decoded: JwtPayload | null = this.jwtService.decode(refreshToken);
+      if (decoded?.email) {
+        email = decoded.email;
+      }
 
       this.auditService.logAuthEvent({
         email,
@@ -197,16 +195,14 @@ export class AuthService {
       this.configService.get<string>('jwt.refreshExpiration') ?? '7d';
 
     const [at, rt] = await Promise.all([
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.secret') as string,
+        secret: this.configService.get<string>('jwt.secret'),
         expiresIn: accessExpiration,
-      } as any), // eslint-disable-line @typescript-eslint/no-explicit-any
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      } as unknown as JwtSignOptions),
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.refreshSecret') as string,
+        secret: this.configService.get<string>('jwt.refreshSecret'),
         expiresIn: refreshExpiration,
-      } as any), // eslint-disable-line @typescript-eslint/no-explicit-any
+      } as unknown as JwtSignOptions),
     ]);
 
     return {
