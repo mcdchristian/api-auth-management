@@ -39,3 +39,10 @@ lerna-debug.log*
 
 # Windows
 Thumbs.db
+
+# Session reports and planning notes — kept locally, not published
+COMPLETION_REPORT.md
+DOCUMENTATION_INDEX.md
+FEATURES_ROADMAP.md
+FINAL_VALIDATION.md
+IMPROVEMENTS.md
