@@ -131,7 +131,7 @@ CREATE DATABASE auth_db;
 Create a `.env` file at the project root:
 
 ```bash
-cp .env.example .env   # if .env.example exists, or create manually
+cp .env.example .env
 ```
 
 Fill in the values (see [Environment Variables](#-environment-variables) below).
@@ -150,36 +150,44 @@ The API will be available at `http://localhost:3000`.
 
 Create a `.env` file in the root directory with the following variables:
 
-| Variable                | Description                        | Default           |
-|-------------------------|------------------------------------|--------------------|
-| `PORT`                  | Server port                        | `3000`             |
-| `DB_HOST`               | PostgreSQL host                    | `localhost`        |
-| `DB_PORT`               | PostgreSQL port                    | `5432`             |
-| `DB_USERNAME`           | Database username                  | `postgres`         |
-| `DB_PASSWORD`           | Database password                  | `postgres`         |
-| `DB_NAME`               | Database name                      | `auth_db`          |
-| `JWT_SECRET`            | Secret key for access tokens       | —                  |
-| `JWT_EXPIRATION`        | Access token lifetime              | `15m`              |
-| `JWT_REFRESH_SECRET`    | Secret key for refresh tokens      | —                  |
-| `JWT_REFRESH_EXPIRATION`| Refresh token lifetime             | `7d`               |
+| Variable                    | Description                                            | Default                              |
+|-----------------------------|--------------------------------------------------------|--------------------------------------|
+| `NODE_ENV`                  | `development` \| `test` \| `production`                 | `development`                        |
+| `PORT`                      | Server port                                            | `3000`                               |
+| `DB_HOST`                   | PostgreSQL host                                        | `localhost`                          |
+| `DB_PORT`                   | PostgreSQL port                                        | `5432`                               |
+| `DB_USERNAME`               | Database username                                      | `postgres`                           |
+| `DB_PASSWORD`               | Database password                                      | `postgres`                           |
+| `DB_NAME`                   | Database name                                          | `auth_db`                            |
+| `DB_SSL`                    | Require TLS to the database (on for managed Postgres)  | `false`                              |
+| `DB_RUN_MIGRATIONS`         | Apply pending migrations on boot                       | `false`                              |
+| `JWT_SECRET`                | Secret key for access tokens                           | — (required in production)           |
+| `JWT_EXPIRATION`            | Access token lifetime                                  | `15m`                                |
+| `JWT_REFRESH_SECRET`        | Secret key for refresh tokens                          | — (required in production)           |
+| `JWT_REFRESH_EXPIRATION`    | Refresh token lifetime                                 | `7d`                                 |
+| `BCRYPT_ROUNDS`             | bcrypt work factor                                     | `12`                                 |
+| `MAX_FAILED_LOGIN_ATTEMPTS` | Failed logins before an account is locked              | `5`                                  |
+| `LOCKOUT_DURATION_MS`       | Lockout duration in milliseconds                       | `900000` (15 min)                    |
+| `SWAGGER_ENABLED`           | Publish the Swagger UI at `/api/docs`                  | `true`, `false` when in production   |
+| `ALLOWED_ORIGINS`           | Comma-separated CORS origins                           | `http://localhost:3000,...:5173`     |
+| `THROTTLE_TTL`              | Rate-limit window in milliseconds                      | `60000`                              |
+| `THROTTLE_LIMIT`            | Requests allowed per window                            | `20`                                 |
 
-**Example `.env` file:**
+> `DB_RUN_MIGRATIONS` is off by default on purpose: several instances starting
+> at once would race on the same migration. Run `npm run migration:run` as a
+> release step instead.
 
-```env
-PORT=3000
+[`.env.example`](.env.example) is the authoritative template — copy it rather
+than assembling a file by hand:
 
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=postgres
-DB_PASSWORD=your_secure_password
-DB_NAME=auth_db
+```bash
+cp .env.example .env
+```
 
-# JWT
-JWT_SECRET=your-super-secret-key-change-in-production
-JWT_EXPIRATION=15m
-JWT_REFRESH_SECRET=your-refresh-secret-key-change-in-production
-JWT_REFRESH_EXPIRATION=7d
+Generate real secrets with:
+
+```bash
+openssl rand -base64 48
 ```
 
 > ⚠️ **Never commit your `.env` file to version control.** It is already listed in `.gitignore`.
