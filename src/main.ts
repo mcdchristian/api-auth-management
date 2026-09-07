@@ -66,6 +66,12 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
+  // Let Nest run onModuleDestroy/onApplicationShutdown on SIGTERM so the
+  // TypeORM pool drains and in-flight requests finish. Container runtimes send
+  // SIGTERM and then SIGKILL a few seconds later; without this the process
+  // ignores the first signal entirely and connections are severed.
+  app.enableShutdownHooks();
+
   const port = configService.get<number>('port') || 3000;
   await app.listen(port);
 
