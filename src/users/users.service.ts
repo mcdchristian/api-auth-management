@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -19,7 +20,20 @@ export class UsersService {
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     private auditService: AuditService,
+    private configService: ConfigService,
   ) {}
+
+  /**
+   * bcrypt work factor, read from configuration so it can be tuned per
+   * environment without touching every call site.
+   */
+  private get bcryptRounds(): number {
+    return this.configService.get<number>('security.bcryptRounds') ?? 12;
+  }
+
+  private hashPassword(plain: string): Promise<string> {
+    return bcrypt.hash(plain, this.bcryptRounds);
+  }
 
   async create(userData: Partial<User>): Promise<User> {
     try {
@@ -34,7 +48,7 @@ export class UsersService {
         throw new BadRequestException('Password is required');
       }
 
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const hashedPassword = await this.hashPassword(userData.password);
       const user = this.usersRepository.create({
         ...userData,
         password: hashedPassword,
@@ -64,7 +78,15 @@ export class UsersService {
   async findByEmail(email: string): Promise<User | undefined> {
     const user = await this.usersRepository.findOne({
       where: { email },
-      select: ['id', 'email', 'password', 'role', 'isActive'],
+      select: [
+        'id',
+        'email',
+        'password',
+        'role',
+        'isActive',
+        'failedLoginAttempts',
+        'lockedUntil',
+      ],
     });
     return user ?? undefined;
   }
@@ -83,7 +105,7 @@ export class UsersService {
   ): Promise<void> {
     let hashedRefreshToken: string | null = null;
     if (refreshToken) {
-      hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
+      hashedRefreshToken = await this.hashPassword(refreshToken);
     }
     await this.usersRepository.update(userId, {
       refreshToken: hashedRefreshToken,
@@ -136,7 +158,7 @@ export class UsersService {
 
     // Hash password if it's being updated
     if (updateData.password) {
-      updateData.password = await bcrypt.hash(updateData.password, 10);
+      updateData.password = await this.hashPassword(updateData.password);
     }
 
     try {
@@ -210,6 +232,50 @@ export class UsersService {
   }
 
   /**
+   * Record one failed login for a user and lock the account once the
+   * configured threshold is reached.
+   *
+   * @returns the instant the lockout expires, or null if not locked.
+   */
+  async registerFailedLogin(user: User): Promise<Date | null> {
+    const maxAttempts =
+      this.configService.get<number>('security.maxFailedLoginAttempts') ?? 5;
+    const lockoutMs =
+      this.configService.get<number>('security.lockoutDurationMs') ?? 900_000;
+
+    const attempts = (user.failedLoginAttempts ?? 0) + 1;
+    const lockedUntil =
+      attempts >= maxAttempts ? new Date(Date.now() + lockoutMs) : null;
+
+    await this.usersRepository.update(user.id, {
+      failedLoginAttempts: attempts,
+      lockedUntil,
+    });
+
+    if (lockedUntil) {
+      this.logger.warn(
+        `Account locked until ${lockedUntil.toISOString()} after ${attempts} failed login attempts: ${user.email}`,
+      );
+    }
+
+    return lockedUntil;
+  }
+
+  /**
+   * Clear the failed-attempt counter after a successful authentication.
+   * Skipped when there is nothing to clear, to avoid a write on every login.
+   */
+  async clearFailedLogins(user: User): Promise<void> {
+    if (!user.failedLoginAttempts && !user.lockedUntil) {
+      return;
+    }
+    await this.usersRepository.update(user.id, {
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+    });
+  }
+
+  /**
    * Change password for an authenticated user.
    */
   async changePassword(
@@ -234,7 +300,7 @@ export class UsersService {
       throw new BadRequestException('Current password is incorrect');
     }
 
-    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    const hashedNewPassword = await this.hashPassword(newPassword);
     await this.usersRepository.update(userId, { password: hashedNewPassword });
   }
 }

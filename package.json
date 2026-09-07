@@ -8,11 +8,19 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node ./dist/main.js",
+    "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
+    "migration:generate": "npm run typeorm -- migration:generate",
+    "migration:create": "typeorm-ts-node-commonjs migration:create",
+    "migration:run": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:show": "npm run typeorm -- migration:show",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\" --max-warnings 0",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -34,6 +42,7 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "dotenv": "^17.4.1",
     "helmet": "^8.2.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -82,9 +91,40 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/*.(t|j)s",
+      "!**/*.spec.ts",
+      "!**/*.module.ts",
+      "!**/dto/*.ts",
+      "!**/entities/*.ts",
+      "!**/interfaces/*.ts",
+      "!**/swagger/*.ts",
+      "!database/migrations/*.ts",
+      "!database/data-source.ts",
+      "!main.ts"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "coverageThreshold": {
+      "./src/auth/auth.service.ts": {
+        "statements": 90,
+        "branches": 70,
+        "lines": 90
+      },
+      "./src/users/users.service.ts": {
+        "statements": 90,
+        "branches": 75,
+        "lines": 90
+      },
+      "./src/common/services/audit.service.ts": {
+        "statements": 95,
+        "branches": 85,
+        "lines": 95
+      },
+      "./src/common/filters/all-exceptions.filter.ts": {
+        "statements": 95,
+        "branches": 70,
+        "lines": 95
+      }
+    }
   }
 }

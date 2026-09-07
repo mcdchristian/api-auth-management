@@ -1,5 +1,4 @@
-import { SetMetadata } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 
 /**
  * Stricter rate limiting for sensitive auth endpoints
@@ -16,6 +15,10 @@ export const ApiThrottle = () =>
   Throttle({ default: { limit: 20, ttl: 60000 } });
 
 /**
- * Skip throttling for public endpoints (health check, etc.)
+ * Exempt an endpoint from rate limiting (health checks, probes).
+ *
+ * Re-exported from @nestjs/throttler rather than reimplemented: ThrottlerGuard
+ * only recognises its own metadata key, so a hand-rolled SetMetadata has no
+ * effect on the guard whatsoever.
  */
-export const SkipThrottle = SetMetadata('skip-throttle', true);
+export { SkipThrottle };

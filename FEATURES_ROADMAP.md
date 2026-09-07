@@ -52,11 +52,11 @@
 ## 👥 User Management Enhancements
 
 ### Soft Delete
-- [ ] Add `deletedAt` field to User entity
-- [ ] Implement soft delete on user deletion
-- [ ] Endpoint: `DELETE /users/:id` - Soft delete user
+- [x] Add `deletedAt` field to User entity
+- [x] Implement soft delete on user deletion
+- [x] Endpoint: `DELETE /users/:id` - Soft delete user
+- [x] Filter out deleted users from queries by default
 - [ ] Endpoint: `POST /users/:id/restore` (admin only) - Restore deleted user
-- [ ] Filter out deleted users from queries by default
 - [ ] Restore functionality for admins
 
 ### Profile Management
@@ -84,10 +84,11 @@
 ## 🛡️ Advanced Security
 
 ### Account Lockout
-- [ ] Lock account after N failed login attempts
-- [ ] Automatic unlock after timeout
+- [x] Lock account after N failed login attempts
+- [x] Automatic unlock after timeout
+- [x] Configuration: lockout duration, attempt threshold
 - [ ] Endpoint: `POST /auth/unlock-account` - Admin unlock
-- [ ] Configuration: lockout duration, attempt threshold
+- [ ] Notify the account owner when a lockout is triggered
 
 ### IP Whitelisting / Blacklisting
 - [ ] Admin endpoint to manage IP whitelist
@@ -122,13 +123,16 @@
 ## 🧪 Testing & Quality
 
 ### Test Coverage
-- [ ] E2E tests for all auth flows (email, password reset, 2FA)
+- [x] Coverage thresholds enforced on the security-critical services
+- [x] E2E coverage of the account lockout flow
+- [ ] E2E tests for the remaining auth flows (email, password reset, 2FA)
 - [ ] Load testing for rate limiting
 - [ ] Security testing (OWASP Top 10)
 - [ ] Penetration testing
 
 ### Performance
 - [ ] Database query optimization (indexes, N+1 prevention)
+- [ ] Move the audit trail out of the capped in-memory buffer
 - [ ] Caching strategy (Redis) for user profiles
 - [ ] Pagination optimization
 - [ ] Database connection pooling
@@ -145,8 +149,8 @@
 ## 🚀 Infrastructure & DevOps
 
 ### CI/CD
-- [ ] GitHub Actions workflow
-- [ ] Automated testing on PR
+- [x] GitHub Actions workflow
+- [x] Automated testing on PR (lint, build, unit matrix, e2e on Postgres)
 - [ ] SonarQube code quality analysis
 - [ ] Automated deployment to staging/production
 
@@ -158,9 +162,10 @@
 - [ ] Uptime monitoring
 
 ### Database Migrations
-- [ ] TypeORM migrations for schema changes
-- [ ] Migration rollback capability
-- [ ] Automated migration on deployment
+- [x] TypeORM migrations for schema changes
+- [x] Migration rollback capability (`npm run migration:revert`)
+- [x] Opt-in migration on startup (`DB_RUN_MIGRATIONS`)
+- [ ] Automated migration as a deployment step in CD
 
 ---
 

@@ -17,6 +17,8 @@ const mockUsersService = () => ({
   findByIdWithRefreshToken: jest.fn(),
   updateRefreshToken: jest.fn(),
   changePassword: jest.fn(),
+  registerFailedLogin: jest.fn(),
+  clearFailedLogins: jest.fn(),
 });
 
 const mockJwtService = () => ({
@@ -33,7 +35,12 @@ const mockConfigService = () => ({
       'jwt.refreshSecret': 'test-refresh-secret',
       'jwt.refreshExpiration': '7d',
     };
-    return config[key];
+    const numeric: Record<string, number> = {
+      'security.bcryptRounds': 10,
+      'security.maxFailedLoginAttempts': 5,
+      'security.lockoutDurationMs': 900000,
+    };
+    return config[key] ?? numeric[key];
   }),
 });
 
@@ -135,6 +142,77 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'notfound@example.com', password: 'any' }),
       ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should still hash-compare when the email does not exist, so response time does not leak account existence', async () => {
+      usersService.findByEmail.mockResolvedValue(undefined);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('$2b$10$dummy');
+
+      await expect(
+        service.login({ email: 'notfound@example.com', password: 'any' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(bcrypt.compare).toHaveBeenCalledWith('any', '$2b$10$dummy');
+      expect(usersService.registerFailedLogin).not.toHaveBeenCalled();
+    });
+
+    it('should count a failed attempt against an existing account', async () => {
+      usersService.findByEmail.mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.login({ email: 'test@example.com', password: 'wrong' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(usersService.registerFailedLogin).toHaveBeenCalledWith(mockUser);
+    });
+
+    it('should reject a locked account with ForbiddenException once the password is correct', async () => {
+      const lockedUntil = new Date(Date.now() + 600_000);
+      usersService.findByEmail.mockResolvedValue({ ...mockUser, lockedUntil });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.login({ email: 'test@example.com', password: 'password123' }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(usersService.updateRefreshToken).not.toHaveBeenCalled();
+    });
+
+    it('should report invalid credentials rather than the lockout when the password is wrong', async () => {
+      const lockedUntil = new Date(Date.now() + 600_000);
+      usersService.findByEmail.mockResolvedValue({ ...mockUser, lockedUntil });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.login({ email: 'test@example.com', password: 'wrong' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      // No extra attempt recorded: the expiry must not slide forward while a
+      // lock is running, or an attacker could keep the owner out for good.
+      expect(usersService.registerFailedLogin).not.toHaveBeenCalled();
+    });
+
+    it('should let an expired lock through and clear the counter', async () => {
+      usersService.findByEmail.mockResolvedValue({
+        ...mockUser,
+        failedLoginAttempts: 5,
+        lockedUntil: new Date(Date.now() - 1_000),
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      jwtService.signAsync
+        .mockResolvedValueOnce('access-token')
+        .mockResolvedValueOnce('refresh-token');
+
+      await expect(
+        service.login({ email: 'test@example.com', password: 'password123' }),
+      ).resolves.toEqual({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+      });
+
+      expect(usersService.clearFailedLogins).toHaveBeenCalled();
     });
 
     it('should throw ForbiddenException for deactivated user', async () => {

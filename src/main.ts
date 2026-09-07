@@ -47,6 +47,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   // Swagger setup
+  const swaggerEnabled = configService.get<boolean>('swagger.enabled') ?? true;
   const config = new DocumentBuilder()
     .setTitle('API Auth & User Management')
     .setDescription(
@@ -63,8 +64,16 @@ async function bootstrap() {
     .addTag('Users', 'User CRUD, profile management (admin & self-service)')
     .addTag('Health', 'Application health checks')
     .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  if (swaggerEnabled) {
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
+
+  // Let Nest run onModuleDestroy/onApplicationShutdown on SIGTERM so the
+  // TypeORM pool drains and in-flight requests finish. Container runtimes send
+  // SIGTERM and then SIGKILL a few seconds later; without this the process
+  // ignores the first signal entirely and connections are severed.
+  app.enableShutdownHooks();
 
   const port = configService.get<number>('port') || 3000;
   await app.listen(port);
@@ -72,6 +81,10 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   logger.log(`Application is running on: http://localhost:${port}`);
   logger.log(`API Base URL: http://localhost:${port}/api/v1`);
-  logger.log(`Swagger documentation: http://localhost:${port}/api/docs`);
+  if (swaggerEnabled) {
+    logger.log(`Swagger documentation: http://localhost:${port}/api/docs`);
+  } else {
+    logger.log('Swagger documentation is disabled (SWAGGER_ENABLED=false)');
+  }
 }
 void bootstrap();
