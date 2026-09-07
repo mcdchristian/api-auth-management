@@ -44,7 +44,9 @@
 - **JWT Authentication** — Secure login & registration with access and refresh tokens.
 - **Refresh Token Rotation** — Hashed refresh tokens stored in the database for secure session persistence.
 - **Role-Based Access Control (RBAC)** — Three built-in roles: `user`, `admin`, and `manager` with route-level protection.
-- **Password Security** — Passwords hashed with **bcrypt** (salt rounds: 10).
+- **Password Security** — Passwords hashed with **bcrypt** (work factor 12, configurable).
+- **Brute-Force Protection** — Per-IP rate limiting plus per-account lockout after repeated failed logins.
+- **Database Migrations** — Versioned schema via TypeORM migrations; `synchronize` never runs outside development.
 - **Input Validation** — Request body validation using `class-validator` with auto-stripping of unknown fields.
 - **Swagger Documentation** — Interactive API docs auto-generated from decorators.
 - **Environment Configuration** — Centralized config management via `.env` files using `@nestjs/config`.
