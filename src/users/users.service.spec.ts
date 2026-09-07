@@ -3,6 +3,7 @@ import { UsersService } from './users.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { AuditService } from '../common/services/audit.service';
+import { ConfigService } from '@nestjs/config';
 import {
   ConflictException,
   NotFoundException,
@@ -28,6 +29,12 @@ const mockAuditService = () => ({
   logUserEvent: jest.fn(),
 });
 
+const mockConfigService = () => ({
+  get: jest.fn((key: string) =>
+    key === 'security.bcryptRounds' ? 10 : undefined,
+  ),
+});
+
 describe('UsersService', () => {
   let service: UsersService;
   let repository: ReturnType<typeof mockRepository>;
@@ -48,6 +55,7 @@ describe('UsersService', () => {
         UsersService,
         { provide: getRepositoryToken(User), useFactory: mockRepository },
         { provide: AuditService, useFactory: mockAuditService },
+        { provide: ConfigService, useFactory: mockConfigService },
       ],
     }).compile();
 
