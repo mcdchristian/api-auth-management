@@ -55,6 +55,14 @@ export default () => {
         10,
       ),
     },
+    // Swagger publishes the full API surface, including every route an
+    // attacker would otherwise have to guess. Off in production unless
+    // explicitly re-enabled.
+    swagger: {
+      enabled: process.env.SWAGGER_ENABLED
+        ? process.env.SWAGGER_ENABLED === 'true'
+        : nodeEnv !== 'production',
+    },
     throttle: {
       ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
       limit: parseInt(process.env.THROTTLE_LIMIT || '20', 10),
