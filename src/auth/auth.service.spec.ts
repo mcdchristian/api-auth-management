@@ -17,6 +17,8 @@ const mockUsersService = () => ({
   findByIdWithRefreshToken: jest.fn(),
   updateRefreshToken: jest.fn(),
   changePassword: jest.fn(),
+  registerFailedLogin: jest.fn(),
+  clearFailedLogins: jest.fn(),
 });
 
 const mockJwtService = () => ({
@@ -33,7 +35,12 @@ const mockConfigService = () => ({
       'jwt.refreshSecret': 'test-refresh-secret',
       'jwt.refreshExpiration': '7d',
     };
-    return config[key];
+    const numeric: Record<string, number> = {
+      'security.bcryptRounds': 10,
+      'security.maxFailedLoginAttempts': 5,
+      'security.lockoutDurationMs': 900000,
+    };
+    return config[key] ?? numeric[key];
   }),
 });
 

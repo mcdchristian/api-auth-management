@@ -68,7 +68,16 @@ export class AuthService {
       user ? user.password : await this.getDummyPasswordHash(),
     );
 
+    const lockedUntil = user?.lockedUntil ?? null;
+    const isLocked = lockedUntil !== null && lockedUntil.getTime() > Date.now();
+
     if (!user || !passwordMatches) {
+      // Only count attempts against a real account, and stop counting while a
+      // lockout is already running so an attacker cannot slide the expiry
+      // forward and keep the legitimate owner out indefinitely.
+      if (user && !isLocked) {
+        await this.usersService.registerFailedLogin(user);
+      }
       this.logger.warn(`Failed login attempt for email: ${loginDto.email}`);
       this.auditService.logAuthEvent({
         email: loginDto.email,
@@ -78,6 +87,23 @@ export class AuthService {
         ipAddress,
       });
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Disclosed only once the correct password has been supplied. Reporting a
+    // lockout on a wrong password would turn this endpoint back into an
+    // account-enumeration oracle.
+    if (isLocked) {
+      this.logger.warn(`Login attempt on locked account: ${loginDto.email}`);
+      this.auditService.logAuthEvent({
+        email: loginDto.email,
+        action: 'login',
+        status: 'failure',
+        reason: 'Account locked',
+        ipAddress,
+      });
+      throw new ForbiddenException(
+        `Account temporarily locked after repeated failed login attempts. Try again after ${lockedUntil.toISOString()}.`,
+      );
     }
 
     if (!user.isActive) {
@@ -100,6 +126,8 @@ export class AuthService {
       status: 'success',
       ipAddress,
     });
+
+    await this.usersService.clearFailedLogins(user);
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
