@@ -18,6 +18,16 @@ import * as bcrypt from 'bcrypt';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  /**
+   * Lazily computed bcrypt hash of a value no user can ever authenticate with.
+   *
+   * When the submitted email does not exist we still run a full bcrypt
+   * comparison against this hash. Without it, an unknown email returns in
+   * microseconds while a known email pays for a bcrypt round, which turns
+   * login response time into a reliable account-enumeration oracle.
+   */
+  private dummyPasswordHash?: string;
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
@@ -53,7 +63,12 @@ export class AuthService {
 
   async login(loginDto: LoginDto, ipAddress?: string) {
     const user = await this.usersService.findByEmail(loginDto.email);
-    if (!user || !(await bcrypt.compare(loginDto.password, user.password))) {
+    const passwordMatches = await bcrypt.compare(
+      loginDto.password,
+      user ? user.password : await this.getDummyPasswordHash(),
+    );
+
+    if (!user || !passwordMatches) {
       this.logger.warn(`Failed login attempt for email: ${loginDto.email}`);
       this.auditService.logAuthEvent({
         email: loginDto.email,
@@ -184,6 +199,14 @@ export class AuthService {
       });
       throw error;
     }
+  }
+
+  private async getDummyPasswordHash(): Promise<string> {
+    this.dummyPasswordHash ??= await bcrypt.hash(
+      'account-enumeration-guard',
+      10,
+    );
+    return this.dummyPasswordHash;
   }
 
   private async generateTokens(userId: string, email: string, role: string) {
