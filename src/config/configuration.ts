@@ -20,6 +20,11 @@ export default () => {
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD || 'postgres',
       name: process.env.DB_NAME || 'auth_db',
+      ssl: process.env.DB_SSL === 'true',
+      // Opt-in so a rolling deploy of several instances does not race on the
+      // same migration; leave it off and run `npm run migration:run` as a
+      // release step instead.
+      runMigrations: process.env.DB_RUN_MIGRATIONS === 'true',
     },
     jwt: {
       secret: process.env.JWT_SECRET || 'dev-only-secret-change-in-production',
