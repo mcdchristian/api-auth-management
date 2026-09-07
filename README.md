@@ -263,21 +263,43 @@ migration history without being rebuilt.
 
 ## 📡 API Endpoints
 
+All routes are prefixed with `/api/v1`.
+
 ### Authentication (`/auth`)
 
-| Method | Endpoint         | Description               | Auth Required |
-|--------|------------------|---------------------------|:-------------:|
-| POST   | `/auth/register` | Register a new user       |      ❌       |
-| POST   | `/auth/login`    | Login & get tokens        |      ❌       |
-| POST   | `/auth/logout`   | Logout (invalidate token) |      ✅       |
-| POST   | `/auth/refresh`  | Refresh access token      |      ❌       |
+| Method | Endpoint                | Description                       | Auth Required | Rate limit |
+|--------|-------------------------|-----------------------------------|:-------------:|------------|
+| POST   | `/auth/register`        | Register a new user               |      ❌       | 5/min      |
+| POST   | `/auth/login`           | Login & get tokens                |      ❌       | 5/min      |
+| POST   | `/auth/logout`          | Logout (invalidates refresh token)|      ✅       | 20/min     |
+| POST   | `/auth/refresh`         | Rotate access & refresh tokens    |      ❌       | 10/min     |
+| PATCH  | `/auth/change-password` | Change your own password          |      ✅       | 20/min     |
 
 ### Users (`/users`)
 
 | Method | Endpoint         | Description                      | Auth Required | Role     |
 |--------|------------------|----------------------------------|:-------------:|----------|
-| GET    | `/users`         | Get all users                    |      ✅       | `admin`  |
-| GET    | `/users/profile` | Get current user's profile       |      ✅       | Any      |
+| GET    | `/users`         | List users (paginated)           |      ✅       | `admin`  |
+| GET    | `/users/profile` | Get your own profile             |      ✅       | Any      |
+| PATCH  | `/users/profile` | Update your own email            |      ✅       | Any      |
+| GET    | `/users/:id`     | Get a user by ID                 |      ✅       | `admin`  |
+| PATCH  | `/users/:id`     | Update a user (email/role/active)|      ✅       | `admin`  |
+| DELETE | `/users/:id`     | Soft-delete a user               |      ✅       | `admin`  |
+
+### Service (`/`, `/health`)
+
+| Method | Endpoint            | Description                                | Auth Required |
+|--------|---------------------|--------------------------------------------|:-------------:|
+| GET    | `/`                 | Service metadata and entry points          |      ❌       |
+| GET    | `/health`           | Full check — database and heap             |      ❌       |
+| GET    | `/health/liveness`  | Is the process responsive? (no dependencies)|      ❌       |
+| GET    | `/health/readiness` | Can it serve traffic? (checks the database)|      ❌       |
+
+Health endpoints are exempt from rate limiting so probes never report the
+service unhealthy for polling too often. Point an orchestrator's liveness
+probe at `/health/liveness` and its readiness probe at `/health/readiness`:
+a database outage should pull a replica out of the load balancer, not restart
+it in a loop.
 
 ### Request & Response Examples
 
