@@ -39,6 +39,16 @@ export default () => {
       // bcrypt work factor. Higher is stronger but slower; 12 is the current
       // OWASP baseline, 10 keeps test suites fast.
       bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
+      // Brute-force protection: lock an account after this many consecutive
+      // failed logins, for this long.
+      maxFailedLoginAttempts: parseInt(
+        process.env.MAX_FAILED_LOGIN_ATTEMPTS || '5',
+        10,
+      ),
+      lockoutDurationMs: parseInt(
+        process.env.LOCKOUT_DURATION_MS || '900000',
+        10,
+      ),
     },
     throttle: {
       ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
