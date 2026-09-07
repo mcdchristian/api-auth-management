@@ -35,6 +35,11 @@ export default () => {
         'http://localhost:3000,http://localhost:5173'
       ).split(','),
     },
+    security: {
+      // bcrypt work factor. Higher is stronger but slower; 12 is the current
+      // OWASP baseline, 10 keeps test suites fast.
+      bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
+    },
     throttle: {
       ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
       limit: parseInt(process.env.THROTTLE_LIMIT || '20', 10),

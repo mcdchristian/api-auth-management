@@ -204,7 +204,7 @@ export class AuthService {
   private async getDummyPasswordHash(): Promise<string> {
     this.dummyPasswordHash ??= await bcrypt.hash(
       'account-enumeration-guard',
-      10,
+      this.configService.get<number>('security.bcryptRounds') ?? 12,
     );
     return this.dummyPasswordHash;
   }
