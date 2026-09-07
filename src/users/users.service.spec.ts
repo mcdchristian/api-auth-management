@@ -288,4 +288,58 @@ describe('UsersService', () => {
       });
     });
   });
+
+  describe('failed login tracking', () => {
+    const lockable = { ...mockUser, failedLoginAttempts: 0 } as User;
+
+    beforeEach(() => {
+      repository.update.mockResolvedValue({ affected: 1 });
+    });
+
+    it('should increment the counter without locking below the threshold', async () => {
+      const lockedUntil = await service.registerFailedLogin({
+        ...lockable,
+        failedLoginAttempts: 2,
+      });
+
+      expect(lockedUntil).toBeNull();
+      expect(repository.update).toHaveBeenCalledWith(mockUser.id, {
+        failedLoginAttempts: 3,
+        lockedUntil: null,
+      });
+    });
+
+    it('should lock the account once the threshold is reached', async () => {
+      const before = Date.now();
+      const lockedUntil = await service.registerFailedLogin({
+        ...lockable,
+        failedLoginAttempts: 4,
+      });
+
+      expect(lockedUntil).toBeInstanceOf(Date);
+      expect(lockedUntil!.getTime()).toBeGreaterThanOrEqual(before + 900_000);
+      expect(repository.update).toHaveBeenCalledWith(mockUser.id, {
+        failedLoginAttempts: 5,
+        lockedUntil,
+      });
+    });
+
+    it('should reset the counter and the lock on success', async () => {
+      await service.clearFailedLogins({
+        ...lockable,
+        failedLoginAttempts: 3,
+      });
+
+      expect(repository.update).toHaveBeenCalledWith(mockUser.id, {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+    });
+
+    it('should not write when there is nothing to clear', async () => {
+      await service.clearFailedLogins(lockable);
+
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+  });
 });
