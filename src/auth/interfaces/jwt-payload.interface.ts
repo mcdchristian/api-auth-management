@@ -1,3 +1,4 @@
+import type { Request } from 'express';
 import { UserRole } from '../../users/entities/user.entity';
 
 /**
@@ -18,4 +19,12 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   role: UserRole;
+}
+
+/**
+ * Express request after JwtAuthGuard has run. `user` is what
+ * JwtStrategy.validate returns — a lean projection, not a User entity.
+ */
+export interface AuthenticatedRequest extends Request {
+  user?: AuthenticatedUser;
 }

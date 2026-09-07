@@ -44,7 +44,9 @@
 - **JWT Authentication** — Secure login & registration with access and refresh tokens.
 - **Refresh Token Rotation** — Hashed refresh tokens stored in the database for secure session persistence.
 - **Role-Based Access Control (RBAC)** — Three built-in roles: `user`, `admin`, and `manager` with route-level protection.
-- **Password Security** — Passwords hashed with **bcrypt** (salt rounds: 10).
+- **Password Security** — Passwords hashed with **bcrypt** (work factor 12, configurable).
+- **Brute-Force Protection** — Per-IP rate limiting plus per-account lockout after repeated failed logins.
+- **Database Migrations** — Versioned schema via TypeORM migrations; `synchronize` never runs outside development.
 - **Input Validation** — Request body validation using `class-validator` with auto-stripping of unknown fields.
 - **Swagger Documentation** — Interactive API docs auto-generated from decorators.
 - **Environment Configuration** — Centralized config management via `.env` files using `@nestjs/config`.
@@ -120,7 +122,13 @@ npm install
 
 ### 3. Set up the database
 
-Create a PostgreSQL database:
+With Docker — nothing to install:
+
+```bash
+docker compose up -d db
+```
+
+Or against an existing PostgreSQL instance:
 
 ```sql
 CREATE DATABASE auth_db;
@@ -131,7 +139,7 @@ CREATE DATABASE auth_db;
 Create a `.env` file at the project root:
 
 ```bash
-cp .env.example .env   # if .env.example exists, or create manually
+cp .env.example .env
 ```
 
 Fill in the values (see [Environment Variables](#-environment-variables) below).
@@ -144,42 +152,63 @@ npm run start:dev
 
 The API will be available at `http://localhost:3000`.
 
+In development the schema is created automatically from the entity
+definitions. Everywhere else it comes from
+[migrations](#-database-migrations).
+
+### Or bring up the whole stack
+
+```bash
+docker compose up --build
+```
+
+Starts PostgreSQL and the API together, waiting on a `pg_isready` healthcheck
+so the API never races an initialising database.
+
 ---
 
 ## 🔐 Environment Variables
 
 Create a `.env` file in the root directory with the following variables:
 
-| Variable                | Description                        | Default           |
-|-------------------------|------------------------------------|--------------------|
-| `PORT`                  | Server port                        | `3000`             |
-| `DB_HOST`               | PostgreSQL host                    | `localhost`        |
-| `DB_PORT`               | PostgreSQL port                    | `5432`             |
-| `DB_USERNAME`           | Database username                  | `postgres`         |
-| `DB_PASSWORD`           | Database password                  | `postgres`         |
-| `DB_NAME`               | Database name                      | `auth_db`          |
-| `JWT_SECRET`            | Secret key for access tokens       | —                  |
-| `JWT_EXPIRATION`        | Access token lifetime              | `15m`              |
-| `JWT_REFRESH_SECRET`    | Secret key for refresh tokens      | —                  |
-| `JWT_REFRESH_EXPIRATION`| Refresh token lifetime             | `7d`               |
+| Variable                    | Description                                            | Default                              |
+|-----------------------------|--------------------------------------------------------|--------------------------------------|
+| `NODE_ENV`                  | `development` \| `test` \| `production`                 | `development`                        |
+| `PORT`                      | Server port                                            | `3000`                               |
+| `DB_HOST`                   | PostgreSQL host                                        | `localhost`                          |
+| `DB_PORT`                   | PostgreSQL port                                        | `5432`                               |
+| `DB_USERNAME`               | Database username                                      | `postgres`                           |
+| `DB_PASSWORD`               | Database password                                      | `postgres`                           |
+| `DB_NAME`                   | Database name                                          | `auth_db`                            |
+| `DB_SSL`                    | Require TLS to the database (on for managed Postgres)  | `false`                              |
+| `DB_RUN_MIGRATIONS`         | Apply pending migrations on boot                       | `false`                              |
+| `JWT_SECRET`                | Secret key for access tokens                           | — (required in production)           |
+| `JWT_EXPIRATION`            | Access token lifetime                                  | `15m`                                |
+| `JWT_REFRESH_SECRET`        | Secret key for refresh tokens                          | — (required in production)           |
+| `JWT_REFRESH_EXPIRATION`    | Refresh token lifetime                                 | `7d`                                 |
+| `BCRYPT_ROUNDS`             | bcrypt work factor                                     | `12`                                 |
+| `MAX_FAILED_LOGIN_ATTEMPTS` | Failed logins before an account is locked              | `5`                                  |
+| `LOCKOUT_DURATION_MS`       | Lockout duration in milliseconds                       | `900000` (15 min)                    |
+| `SWAGGER_ENABLED`           | Publish the Swagger UI at `/api/docs`                  | `true`, `false` when in production   |
+| `ALLOWED_ORIGINS`           | Comma-separated CORS origins                           | `http://localhost:3000,...:5173`     |
+| `THROTTLE_TTL`              | Rate-limit window in milliseconds                      | `60000`                              |
+| `THROTTLE_LIMIT`            | Requests allowed per window                            | `20`                                 |
 
-**Example `.env` file:**
+> `DB_RUN_MIGRATIONS` is off by default on purpose: several instances starting
+> at once would race on the same migration. Run `npm run migration:run` as a
+> release step instead.
 
-```env
-PORT=3000
+[`.env.example`](.env.example) is the authoritative template — copy it rather
+than assembling a file by hand:
 
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=postgres
-DB_PASSWORD=your_secure_password
-DB_NAME=auth_db
+```bash
+cp .env.example .env
+```
 
-# JWT
-JWT_SECRET=your-super-secret-key-change-in-production
-JWT_EXPIRATION=15m
-JWT_REFRESH_SECRET=your-refresh-secret-key-change-in-production
-JWT_REFRESH_EXPIRATION=7d
+Generate real secrets with:
+
+```bash
+openssl rand -base64 48
 ```
 
 > ⚠️ **Never commit your `.env` file to version control.** It is already listed in `.gitignore`.
@@ -205,23 +234,74 @@ npm run start:prod
 
 ---
 
+## 🗄 Database Migrations
+
+`synchronize` runs only when `NODE_ENV=development`. Any other environment —
+staging included — gets its schema from the migrations in
+`src/database/migrations`.
+
+```bash
+# Apply pending migrations
+npm run migration:run
+
+# Show what has and has not been applied
+npm run migration:show
+
+# Roll the most recent one back
+npm run migration:revert
+
+# Generate a migration from a change to the entities
+npm run migration:generate -- src/database/migrations/DescribeTheChange
+```
+
+The CLI reads `src/database/data-source.ts`, which takes the same environment
+variables as the running application.
+
+The baseline migration is written to be safe against a database that
+`synchronize` already populated, so an existing instance can adopt the
+migration history without being rebuilt.
+
+---
+
 ## 📡 API Endpoints
+
+All routes are prefixed with `/api/v1`.
 
 ### Authentication (`/auth`)
 
-| Method | Endpoint         | Description               | Auth Required |
-|--------|------------------|---------------------------|:-------------:|
-| POST   | `/auth/register` | Register a new user       |      ❌       |
-| POST   | `/auth/login`    | Login & get tokens        |      ❌       |
-| POST   | `/auth/logout`   | Logout (invalidate token) |      ✅       |
-| POST   | `/auth/refresh`  | Refresh access token      |      ❌       |
+| Method | Endpoint                | Description                       | Auth Required | Rate limit |
+|--------|-------------------------|-----------------------------------|:-------------:|------------|
+| POST   | `/auth/register`        | Register a new user               |      ❌       | 5/min      |
+| POST   | `/auth/login`           | Login & get tokens                |      ❌       | 5/min      |
+| POST   | `/auth/logout`          | Logout (invalidates refresh token)|      ✅       | 20/min     |
+| POST   | `/auth/refresh`         | Rotate access & refresh tokens    |      ❌       | 10/min     |
+| PATCH  | `/auth/change-password` | Change your own password          |      ✅       | 20/min     |
 
 ### Users (`/users`)
 
 | Method | Endpoint         | Description                      | Auth Required | Role     |
 |--------|------------------|----------------------------------|:-------------:|----------|
-| GET    | `/users`         | Get all users                    |      ✅       | `admin`  |
-| GET    | `/users/profile` | Get current user's profile       |      ✅       | Any      |
+| GET    | `/users`         | List users (paginated)           |      ✅       | `admin`  |
+| GET    | `/users/profile` | Get your own profile             |      ✅       | Any      |
+| PATCH  | `/users/profile` | Update your own email            |      ✅       | Any      |
+| GET    | `/users/:id`     | Get a user by ID                 |      ✅       | `admin`  |
+| PATCH  | `/users/:id`     | Update a user (email/role/active)|      ✅       | `admin`  |
+| DELETE | `/users/:id`     | Soft-delete a user               |      ✅       | `admin`  |
+
+### Service (`/`, `/health`)
+
+| Method | Endpoint            | Description                                | Auth Required |
+|--------|---------------------|--------------------------------------------|:-------------:|
+| GET    | `/`                 | Service metadata and entry points          |      ❌       |
+| GET    | `/health`           | Full check — database and heap             |      ❌       |
+| GET    | `/health/liveness`  | Is the process responsive? (no dependencies)|      ❌       |
+| GET    | `/health/readiness` | Can it serve traffic? (checks the database)|      ❌       |
+
+Health endpoints are exempt from rate limiting so probes never report the
+service unhealthy for polling too often. Point an orchestrator's liveness
+probe at `/health/liveness` and its readiness probe at `/health/readiness`:
+a database outage should pull a replica out of the load balancer, not restart
+it in a loop.
 
 ### Request & Response Examples
 
@@ -353,12 +433,38 @@ npm run test
 # Run tests in watch mode
 npm run test:watch
 
-# Run end-to-end tests
-npm run test:e2e
-
-# Generate coverage report
+# Generate a coverage report and enforce the thresholds
 npm run test:cov
+
+# Lint and formatting, exactly as CI runs them
+npm run lint:check
+npm run format:check
 ```
+
+### End-to-end tests
+
+These need a real database:
+
+```bash
+docker compose up -d db
+npm run test:e2e
+```
+
+They run against `synchronize` in development. CI runs them with
+`NODE_ENV=test` after `npm run migration:run`, so the suite exercises the
+schema the migrations actually produce — a migration that drifts from the
+entities fails there rather than on a deploy.
+
+`npm run test:cov` enforces per-file coverage floors on the security-critical
+services (auth, users, audit, and the exception filter). A change that drops
+their coverage fails the build.
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
+`main` and on every pull request: lint and formatting, a production build,
+unit tests across Node 20 and 22, and the e2e suite against a PostgreSQL
+service container.
 
 ---
 

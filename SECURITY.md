@@ -10,10 +10,12 @@ This API implements industry-standard security practices for authentication and 
 - ✅ **JWT (JSON Web Tokens)** - Stateless authentication with asymmetric key support
 - ✅ **Refresh Token Rotation** - Tokens invalidated on logout, hashed in database
 - ✅ **Role-Based Access Control (RBAC)** - Three roles: user, admin, manager
-- ✅ **Password Hashing** - bcrypt with salt rounds 10 (configurable)
+- ✅ **Password Hashing** - bcrypt, work factor 12 by default (`BCRYPT_ROUNDS`)
 - ✅ **HTTP Security Headers** - Helmet.js for security headers
 - ✅ **CORS Configuration** - Whitelist of allowed origins
 - ✅ **Rate Limiting** - 5 req/min for auth endpoints, 20 req/min for others
+- ✅ **Account Lockout** - 5 consecutive failed logins lock the account for 15 minutes
+- ✅ **Enumeration Resistance** - Login costs the same whether or not the email exists
 - ✅ **Input Validation** - class-validator with DTO validation
 - ✅ **Error Handling** - No sensitive information leakage in error messages
 
@@ -27,6 +29,8 @@ This API implements industry-standard security practices for authentication and 
 ### Infrastructure
 - ✅ **Environment Variables** - Secrets stored in .env (not in code)
 - ✅ **Non-root User** - Docker runs as non-root user
+- ✅ **API Surface Not Published** - Swagger UI off in production (`SWAGGER_ENABLED`)
+- ✅ **Schema Under Control** - `synchronize` limited to development; elsewhere, migrations
 - ✅ **Type Safety** - TypeScript strict mode, ESLint rules
 - ✅ **Dependency Scanning** - package.json with security-focused packages
 
@@ -57,6 +61,32 @@ Example Strong Password: SecurePass123!
 - **Other Endpoints**: 20 requests per minute (default)
 
 Recommendation: Reduce limits further in production or implement IP-based rate limiting
+
+### Account Lockout
+
+Rate limiting is per-IP, so a guesser spread across many addresses never fills
+a single bucket. The per-account counter is what covers that case.
+
+- **Threshold**: 5 consecutive failed logins (`MAX_FAILED_LOGIN_ATTEMPTS`)
+- **Duration**: 15 minutes (`LOCKOUT_DURATION_MS`)
+- **Reset**: cleared on the first successful login
+
+Two deliberate details:
+
+- The lock is reported (403) **only once the correct password is supplied**. A
+  wrong password always returns a plain 401, so the endpoint cannot be used to
+  discover which addresses are registered.
+- Attempts made **while a lock is already running are not counted**, so the
+  expiry cannot be pushed forward indefinitely to keep the real owner out.
+
+### Account Enumeration
+
+Login runs a bcrypt comparison even when the email is unknown, against a dummy
+hash. Without it, an unknown address returns in microseconds while a known one
+pays for a full bcrypt round, and the difference is measurable from outside.
+
+Registration is the remaining exception: it necessarily returns 409 for an
+address that already exists.
 
 ### Session Management
 - Sessions are stateless (JWT-based)
@@ -122,10 +152,10 @@ ALLOWED_ORIGINS=https://app.example.com,https://www.example.com
 - [ ] Audit trail for compliance
 
 ### 8. User Account Security
-- [ ] Implement account lockout (after N failed attempts)
+- [x] Implement account lockout (after N failed attempts)
+- [x] Enforce strong password requirements
 - [ ] Require email verification on registration
 - [ ] Implement password expiration policy
-- [ ] Enforce strong password requirements
 - [ ] Support two-factor authentication (2FA)
 - [ ] Allow password reset via email
 
@@ -156,7 +186,8 @@ Before deploying to production:
 - [ ] SQL injection testing - OWASP SQL injection tests
 - [ ] XSS (Cross-Site Scripting) testing - Input validation
 - [ ] CSRF (Cross-Site Request Forgery) - SameSite cookie
-- [ ] Brute force testing - Rate limiting
+- [ ] Brute force testing - Rate limiting and account lockout
+- [ ] Account enumeration testing - Response time and status parity on login
 - [ ] Token replay testing - Token expiration
 - [ ] Password strength testing - Validation rules
 - [ ] SSL/TLS testing - cURL and testssl.sh

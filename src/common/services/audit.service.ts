@@ -19,12 +19,35 @@ export interface AuditLog {
  */
 @Injectable()
 export class AuditService {
+  /**
+   * Upper bound on the in-memory audit buffer. An entry is appended on every
+   * auth and user event, so an unbounded array grows with traffic until the
+   * process exhausts its heap. Older entries are evicted once the cap is hit;
+   * the logger output stays the durable record.
+   */
+  static readonly MAX_BUFFERED_LOGS = 10_000;
+
   private readonly logger = new Logger(AuditService.name);
   private readonly auditLogs: AuditLog[] = [];
+  private droppedLogCount = 0;
 
-  constructor() {
-    // In production, this should write to a database or external logging service
-    // For now, we'll store in memory and also log to console
+  /**
+   * Append an entry, evicting the oldest ones when the buffer is full.
+   */
+  private record(log: AuditLog): void {
+    this.auditLogs.push(log);
+    const overflow = this.auditLogs.length - AuditService.MAX_BUFFERED_LOGS;
+    if (overflow > 0) {
+      this.auditLogs.splice(0, overflow);
+      this.droppedLogCount += overflow;
+    }
+  }
+
+  /**
+   * Number of entries evicted from the buffer since startup.
+   */
+  getDroppedLogCount(): number {
+    return this.droppedLogCount;
   }
 
   /**
@@ -54,7 +77,7 @@ export class AuditService {
       ipAddress: event.ipAddress,
     };
 
-    this.auditLogs.push(log);
+    this.record(log);
     this.logger.log(
       `[AUDIT] ${event.action.toUpperCase()} - ${event.email} - ${event.status} ${event.reason ? `- Reason: ${event.reason}` : ''}`,
     );
@@ -82,7 +105,7 @@ export class AuditService {
       status: event.status,
     };
 
-    this.auditLogs.push(log);
+    this.record(log);
     this.logger.log(
       `[AUDIT] ${event.action.toUpperCase()} - User: ${event.userEmail} (${event.userId}) - ${event.status}`,
     );

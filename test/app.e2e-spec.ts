@@ -44,11 +44,15 @@ describe('App & Authentication (e2e)', () => {
     await app.close();
   });
 
-  it('/api/v1 (GET)', () => {
-    return request(app.getHttpServer())
+  it('/api/v1 (GET) - returns service metadata', async () => {
+    const response = await request(app.getHttpServer())
       .get('/api/v1')
-      .expect(200)
-      .expect('Hello World!');
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      name: 'API Auth & User Management',
+      health: '/api/v1/health',
+    });
   });
 
   describe('/auth (endpoints)', () => {

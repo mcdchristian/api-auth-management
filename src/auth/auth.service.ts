@@ -18,6 +18,16 @@ import * as bcrypt from 'bcrypt';
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  /**
+   * Lazily computed bcrypt hash of a value no user can ever authenticate with.
+   *
+   * When the submitted email does not exist we still run a full bcrypt
+   * comparison against this hash. Without it, an unknown email returns in
+   * microseconds while a known email pays for a bcrypt round, which turns
+   * login response time into a reliable account-enumeration oracle.
+   */
+  private dummyPasswordHash?: string;
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
@@ -53,7 +63,21 @@ export class AuthService {
 
   async login(loginDto: LoginDto, ipAddress?: string) {
     const user = await this.usersService.findByEmail(loginDto.email);
-    if (!user || !(await bcrypt.compare(loginDto.password, user.password))) {
+    const passwordMatches = await bcrypt.compare(
+      loginDto.password,
+      user ? user.password : await this.getDummyPasswordHash(),
+    );
+
+    const lockedUntil = user?.lockedUntil ?? null;
+    const isLocked = lockedUntil !== null && lockedUntil.getTime() > Date.now();
+
+    if (!user || !passwordMatches) {
+      // Only count attempts against a real account, and stop counting while a
+      // lockout is already running so an attacker cannot slide the expiry
+      // forward and keep the legitimate owner out indefinitely.
+      if (user && !isLocked) {
+        await this.usersService.registerFailedLogin(user);
+      }
       this.logger.warn(`Failed login attempt for email: ${loginDto.email}`);
       this.auditService.logAuthEvent({
         email: loginDto.email,
@@ -63,6 +87,23 @@ export class AuthService {
         ipAddress,
       });
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Disclosed only once the correct password has been supplied. Reporting a
+    // lockout on a wrong password would turn this endpoint back into an
+    // account-enumeration oracle.
+    if (isLocked) {
+      this.logger.warn(`Login attempt on locked account: ${loginDto.email}`);
+      this.auditService.logAuthEvent({
+        email: loginDto.email,
+        action: 'login',
+        status: 'failure',
+        reason: 'Account locked',
+        ipAddress,
+      });
+      throw new ForbiddenException(
+        `Account temporarily locked after repeated failed login attempts. Try again after ${lockedUntil.toISOString()}.`,
+      );
     }
 
     if (!user.isActive) {
@@ -85,6 +126,8 @@ export class AuthService {
       status: 'success',
       ipAddress,
     });
+
+    await this.usersService.clearFailedLogins(user);
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
@@ -184,6 +227,14 @@ export class AuthService {
       });
       throw error;
     }
+  }
+
+  private async getDummyPasswordHash(): Promise<string> {
+    this.dummyPasswordHash ??= await bcrypt.hash(
+      'account-enumeration-guard',
+      this.configService.get<number>('security.bcryptRounds') ?? 12,
+    );
+    return this.dummyPasswordHash;
   }
 
   private async generateTokens(userId: string, email: string, role: string) {

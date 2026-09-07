@@ -45,6 +45,22 @@ export class User {
   @Exclude()
   refreshToken: string | null;
 
+  /**
+   * Consecutive failed login attempts since the last success. Reset to 0 on a
+   * successful login and used to trigger a temporary lockout.
+   */
+  @Column({ type: 'int', default: 0, select: false })
+  @Exclude()
+  failedLoginAttempts: number;
+
+  /**
+   * Instant until which authentication is refused for this account. Null when
+   * the account is not locked.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true, select: false })
+  @Exclude()
+  lockedUntil: Date | null;
+
   @CreateDateColumn()
   @ApiProperty()
   createdAt: Date;
