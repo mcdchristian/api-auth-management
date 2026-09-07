@@ -120,7 +120,13 @@ npm install
 
 ### 3. Set up the database
 
-Create a PostgreSQL database:
+With Docker — nothing to install:
+
+```bash
+docker compose up -d db
+```
+
+Or against an existing PostgreSQL instance:
 
 ```sql
 CREATE DATABASE auth_db;
@@ -143,6 +149,19 @@ npm run start:dev
 ```
 
 The API will be available at `http://localhost:3000`.
+
+In development the schema is created automatically from the entity
+definitions. Everywhere else it comes from
+[migrations](#-database-migrations).
+
+### Or bring up the whole stack
+
+```bash
+docker compose up --build
+```
+
+Starts PostgreSQL and the API together, waiting on a `pg_isready` healthcheck
+so the API never races an initialising database.
 
 ---
 
@@ -210,6 +229,35 @@ npm run start:debug
 npm run build
 npm run start:prod
 ```
+
+---
+
+## 🗄 Database Migrations
+
+`synchronize` runs only when `NODE_ENV=development`. Any other environment —
+staging included — gets its schema from the migrations in
+`src/database/migrations`.
+
+```bash
+# Apply pending migrations
+npm run migration:run
+
+# Show what has and has not been applied
+npm run migration:show
+
+# Roll the most recent one back
+npm run migration:revert
+
+# Generate a migration from a change to the entities
+npm run migration:generate -- src/database/migrations/DescribeTheChange
+```
+
+The CLI reads `src/database/data-source.ts`, which takes the same environment
+variables as the running application.
+
+The baseline migration is written to be safe against a database that
+`synchronize` already populated, so an existing instance can adopt the
+migration history without being rebuilt.
 
 ---
 
@@ -361,12 +409,38 @@ npm run test
 # Run tests in watch mode
 npm run test:watch
 
-# Run end-to-end tests
-npm run test:e2e
-
-# Generate coverage report
+# Generate a coverage report and enforce the thresholds
 npm run test:cov
+
+# Lint and formatting, exactly as CI runs them
+npm run lint:check
+npm run format:check
 ```
+
+### End-to-end tests
+
+These need a real database:
+
+```bash
+docker compose up -d db
+npm run test:e2e
+```
+
+They run against `synchronize` in development. CI runs them with
+`NODE_ENV=test` after `npm run migration:run`, so the suite exercises the
+schema the migrations actually produce — a migration that drifts from the
+entities fails there rather than on a deploy.
+
+`npm run test:cov` enforces per-file coverage floors on the security-critical
+services (auth, users, audit, and the exception filter). A change that drops
+their coverage fails the build.
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
+`main` and on every pull request: lint and formatting, a production build,
+unit tests across Node 20 and 22, and the e2e suite against a PostgreSQL
+service container.
 
 ---
 
