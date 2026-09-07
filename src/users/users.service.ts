@@ -78,7 +78,15 @@ export class UsersService {
   async findByEmail(email: string): Promise<User | undefined> {
     const user = await this.usersRepository.findOne({
       where: { email },
-      select: ['id', 'email', 'password', 'role', 'isActive'],
+      select: [
+        'id',
+        'email',
+        'password',
+        'role',
+        'isActive',
+        'failedLoginAttempts',
+        'lockedUntil',
+      ],
     });
     return user ?? undefined;
   }
@@ -221,6 +229,50 @@ export class UsersService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Record one failed login for a user and lock the account once the
+   * configured threshold is reached.
+   *
+   * @returns the instant the lockout expires, or null if not locked.
+   */
+  async registerFailedLogin(user: User): Promise<Date | null> {
+    const maxAttempts =
+      this.configService.get<number>('security.maxFailedLoginAttempts') ?? 5;
+    const lockoutMs =
+      this.configService.get<number>('security.lockoutDurationMs') ?? 900_000;
+
+    const attempts = (user.failedLoginAttempts ?? 0) + 1;
+    const lockedUntil =
+      attempts >= maxAttempts ? new Date(Date.now() + lockoutMs) : null;
+
+    await this.usersRepository.update(user.id, {
+      failedLoginAttempts: attempts,
+      lockedUntil,
+    });
+
+    if (lockedUntil) {
+      this.logger.warn(
+        `Account locked until ${lockedUntil.toISOString()} after ${attempts} failed login attempts: ${user.email}`,
+      );
+    }
+
+    return lockedUntil;
+  }
+
+  /**
+   * Clear the failed-attempt counter after a successful authentication.
+   * Skipped when there is nothing to clear, to avoid a write on every login.
+   */
+  async clearFailedLogins(user: User): Promise<void> {
+    if (!user.failedLoginAttempts && !user.lockedUntil) {
+      return;
+    }
+    await this.usersRepository.update(user.id, {
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+    });
   }
 
   /**
