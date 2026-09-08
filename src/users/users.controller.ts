@@ -4,7 +4,10 @@ import {
   Body,
   Patch,
   Param,
+  Post,
   Delete,
+  HttpCode,
+  HttpStatus,
   UseGuards,
   Query,
   ParseUUIDPipe,
@@ -90,6 +93,23 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
   ) {
     return this.usersService.update(id, updateUserDto);
+  }
+
+  @Post(':id/restore')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Restore a soft-deleted user (Admin only)' })
+  @ApiResponse({ status: 200, description: 'User restored successfully.' })
+  @ApiResponse({ status: 400, description: 'User is not deleted.' })
+  @ApiResponse({ status: 404, description: 'User not found.' })
+  @ApiResponse({
+    status: 409,
+    description: 'The address now belongs to an active account.',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden — requires admin role.' })
+  restore(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.usersService.restore(id);
   }
 
   @Delete(':id')
