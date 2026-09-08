@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Between, MoreThanOrEqual } from 'typeorm';
+import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { AuditService } from './audit.service';
 import { AuditLog } from '../../audit/entities/audit-log.entity';
 
@@ -177,12 +177,26 @@ describe('AuditService', () => {
       expect(lastFindArgs().where.timestamp).toEqual(Between(from, to));
     });
 
-    it('should build an open-ended range from a single bound', async () => {
+    it('should build an open-ended range from a lower bound alone', async () => {
       const from = new Date('2026-01-01T00:00:00Z');
 
       await service.findLogs({ from });
 
       expect(lastFindArgs().where.timestamp).toEqual(MoreThanOrEqual(from));
+    });
+
+    it('should build an open-ended range from an upper bound alone', async () => {
+      const to = new Date('2026-02-01T00:00:00Z');
+
+      await service.findLogs({ to });
+
+      expect(lastFindArgs().where.timestamp).toEqual(LessThanOrEqual(to));
+    });
+
+    it('should not constrain the timestamp when no bound is given', async () => {
+      await service.findLogs({ action: 'login' });
+
+      expect(lastFindArgs().where.timestamp).toBeUndefined();
     });
   });
 
