@@ -232,6 +232,60 @@ export class UsersService {
   }
 
   /**
+   * Bring a soft-deleted account back.
+   *
+   * Deleting no longer reserves the address, so it may have been claimed in
+   * the meantime. Restoring into that collision would leave two live accounts
+   * on one email, which the partial unique index rejects at the database
+   * level — this reports it as a conflict rather than letting it surface as a
+   * constraint violation.
+   */
+  async restore(id: string): Promise<User> {
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      withDeleted: true,
+      select: ['id', 'email', 'role', 'isActive', 'deletedAt'],
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+    if (!user.deletedAt) {
+      throw new BadRequestException('User is not deleted');
+    }
+
+    const holder = await this.usersRepository.findOne({
+      where: { email: user.email },
+      select: ['id'],
+    });
+    if (holder) {
+      this.auditService.logUserEvent({
+        userId: id,
+        userEmail: user.email,
+        action: 'user_restored',
+        status: 'failure',
+      });
+      throw new ConflictException(
+        `Cannot restore: ${user.email} now belongs to an active account`,
+      );
+    }
+
+    await this.usersRepository.restore(id);
+    this.auditService.logUserEvent({
+      userId: id,
+      userEmail: user.email,
+      action: 'user_restored',
+      status: 'success',
+    });
+
+    const restored = await this.findById(id);
+    if (!restored) {
+      throw new NotFoundException(`User with ID ${id} not found after restore`);
+    }
+    return restored;
+  }
+
+  /**
    * Record one failed login for a user and lock the account once the
    * configured threshold is reached.
    *
