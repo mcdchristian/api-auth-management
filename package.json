@@ -1,8 +1,8 @@
 {
   "name": "api-auth-management",
   "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "description": "Secure REST API for authentication and user management: JWT with refresh token rotation, RBAC, account lockout, and a persisted audit trail.",
+  "author": "mcdchristian",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
