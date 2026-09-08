@@ -10,6 +10,7 @@ import {
   HttpStatus,
   UseGuards,
   Query,
+  NotFoundException,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
@@ -39,6 +40,19 @@ import { UserProfileResponse } from '../common/swagger/responses.swagger';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  /**
+   * findById resolves to undefined for an unknown or soft-deleted user, and
+   * returning that straight from a handler produces 200 with an empty body —
+   * not the 404 these routes document.
+   */
+  private async requireUser(id: string) {
+    const user = await this.usersService.findById(id);
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+    return user;
+  }
+
   @Get()
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get all users with pagination (Admin only)' })
@@ -53,8 +67,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Get current user profile' })
   @UserProfileResponse()
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  getProfile(@CurrentUser() user: AuthenticatedUser) {
-    return this.usersService.findById(user.id);
+  async getProfile(@CurrentUser() user: AuthenticatedUser) {
+    return this.requireUser(user.id);
   }
 
   @Patch('profile')
@@ -76,8 +90,8 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'User not found.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden — requires admin role.' })
-  findOne(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.usersService.findById(id);
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.requireUser(id);
   }
 
   @Patch(':id')
