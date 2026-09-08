@@ -63,6 +63,7 @@ async function bootstrap() {
     )
     .addTag('Users', 'User CRUD, profile management (admin & self-service)')
     .addTag('Health', 'Application health checks')
+    .addTag('Audit', 'Security audit trail (admin only)')
     .build();
   if (swaggerEnabled) {
     const document = SwaggerModule.createDocument(app, config);
