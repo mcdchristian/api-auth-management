@@ -1,6 +1,7 @@
 import {
   Entity,
   Column,
+  Index,
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
@@ -16,12 +17,19 @@ export enum UserRole {
 }
 
 @Entity('users')
+// Uniqueness applies to live rows only. A plain UNIQUE column would keep a
+// soft-deleted user's address reserved forever: nobody could register with it
+// again, and the row it belongs to is no longer reachable through the API.
+@Index('UQ_users_email_active', ['email'], {
+  unique: true,
+  where: '"deletedAt" IS NULL',
+})
 export class User {
   @PrimaryGeneratedColumn('uuid')
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
   id: string;
 
-  @Column({ unique: true })
+  @Column()
   @ApiProperty({ example: 'john.doe@example.com' })
   email: string;
 

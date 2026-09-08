@@ -287,6 +287,18 @@ All routes are prefixed with `/api/v1`.
 | GET    | `/users/:id`     | Get a user by ID                 |      ✅       | `admin`  |
 | PATCH  | `/users/:id`     | Update a user (email/role/active)|      ✅       | `admin`  |
 | DELETE | `/users/:id`     | Soft-delete a user               |      ✅       | `admin`  |
+| POST   | `/users/:id/restore` | Restore a soft-deleted user  |      ✅       | `admin`  |
+
+#### Deletion is reversible
+
+`DELETE /users/:id` sets `deletedAt` and leaves the row in place. The account
+stops resolving — `GET /users/:id` answers 404 — and its email address is
+released, so anyone (including the original owner) can register with it again.
+
+`POST /users/:id/restore` brings the account back. If the address was claimed
+in the meantime the restore is refused with 409, since two live accounts
+cannot share one: uniqueness is enforced by a partial index over rows where
+`deletedAt IS NULL`.
 
 ### Service (`/`, `/health`)
 
