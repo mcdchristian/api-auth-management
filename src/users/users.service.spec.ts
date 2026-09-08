@@ -22,6 +22,7 @@ const mockRepository = () => ({
   update: jest.fn(),
   delete: jest.fn(),
   softDelete: jest.fn(),
+  restore: jest.fn(),
 });
 
 const mockAuditService = () => ({
@@ -286,6 +287,59 @@ describe('UsersService', () => {
       expect(repository.update).toHaveBeenCalledWith(mockUser.id, {
         refreshToken: null,
       });
+    });
+  });
+
+  describe('restore', () => {
+    const deletedUser = {
+      ...mockUser,
+      deletedAt: new Date('2026-01-01T00:00:00Z'),
+    } as User;
+
+    it('should restore a deleted account whose address is still free', async () => {
+      repository.findOne
+        .mockResolvedValueOnce(deletedUser) // lookup including deleted rows
+        .mockResolvedValueOnce(null) // nobody holds the address
+        .mockResolvedValueOnce(mockUser); // reload after restore
+      repository.restore.mockResolvedValue({ affected: 1 });
+
+      const result = await service.restore(mockUser.id!);
+
+      expect(repository.restore).toHaveBeenCalledWith(mockUser.id);
+      expect(result).toEqual(mockUser);
+    });
+
+    it('should throw NotFoundException when the id is unknown', async () => {
+      repository.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.restore(mockUser.id!)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(repository.restore).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when the account is not deleted', async () => {
+      repository.findOne.mockResolvedValueOnce({
+        ...mockUser,
+        deletedAt: null,
+      });
+
+      await expect(service.restore(mockUser.id!)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(repository.restore).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to restore into an address someone else now holds', async () => {
+      repository.findOne
+        .mockResolvedValueOnce(deletedUser)
+        .mockResolvedValueOnce({ id: 'someone-else' });
+
+      await expect(service.restore(mockUser.id!)).rejects.toThrow(
+        ConflictException,
+      );
+      // Letting this through would leave two live accounts on one email.
+      expect(repository.restore).not.toHaveBeenCalled();
     });
   });
 
