@@ -1,83 +1,218 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Between, MoreThanOrEqual } from 'typeorm';
 import { AuditService } from './audit.service';
+import { AuditLog } from '../../audit/entities/audit-log.entity';
+
+/** Let the fire-and-forget persist() settle before asserting on it. */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('AuditService', () => {
   let service: AuditService;
+  interface FindArgs {
+    where: Record<string, unknown>;
+  }
+  let repository: {
+    create: jest.Mock;
+    save: jest.Mock;
+    findAndCount: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
+  let queryBuilder: Record<string, jest.Mock>;
 
-  beforeEach(() => {
-    service = new AuditService();
-    jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
+  /** Cast the call list before indexing, so nothing lands on `any`. */
+  const lastFindArgs = (): FindArgs => {
+    const calls = repository.findAndCount.mock.calls as Array<[FindArgs]>;
+    return calls[0][0];
+  };
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(async () => {
+    queryBuilder = {
+      select: jest.fn(),
+      addSelect: jest.fn(),
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      groupBy: jest.fn(),
+      orderBy: jest.fn(),
+      getRawMany: jest.fn().mockResolvedValue([]),
+    };
+    // Every builder method except the terminal one is chainable.
+    for (const [name, fn] of Object.entries(queryBuilder)) {
+      if (name !== 'getRawMany') fn.mockReturnValue(queryBuilder);
+    }
+
+    repository = {
+      create: jest.fn((input: unknown) => input),
+      save: jest.fn().mockResolvedValue({}),
+      findAndCount: jest.fn().mockResolvedValue([[], 0]),
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuditService,
+        { provide: getRepositoryToken(AuditLog), useValue: repository },
+      ],
+    }).compile();
+
+    service = module.get(AuditService);
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
   });
 
-  const logFailure = (email: string) =>
-    service.logAuthEvent({ email, action: 'login', status: 'failure' });
+  afterEach(() => jest.restoreAllMocks());
 
-  describe('buffering', () => {
-    it('should keep entries below the cap', () => {
-      logFailure('a@example.com');
-      logFailure('b@example.com');
+  describe('logAuthEvent', () => {
+    it('should persist the event', async () => {
+      service.logAuthEvent({
+        email: 'a@example.com',
+        action: 'login',
+        status: 'failure',
+        reason: 'Invalid credentials',
+        ipAddress: '203.0.113.7',
+      });
+      await flush();
 
-      expect(service.getLogs()).toHaveLength(2);
-      expect(service.getDroppedLogCount()).toBe(0);
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userEmail: 'a@example.com',
+          action: 'login',
+          resourceType: 'auth',
+          status: 'failure',
+          reason: 'Invalid credentials',
+          ipAddress: '203.0.113.7',
+        }),
+      );
     });
 
-    it('should evict the oldest entries instead of growing without bound', () => {
-      const overflow = 5;
-      for (let i = 0; i < AuditService.MAX_BUFFERED_LOGS + overflow; i++) {
-        logFailure(`user-${i}@example.com`);
-      }
+    it('should not throw when the write fails', async () => {
+      repository.save.mockRejectedValue(new Error('connection terminated'));
 
-      const logs = service.getLogs();
-      expect(logs).toHaveLength(AuditService.MAX_BUFFERED_LOGS);
-      expect(service.getDroppedLogCount()).toBe(overflow);
-      // The first `overflow` entries are the ones that went.
-      expect(logs[0]?.userEmail).toBe(`user-${overflow}@example.com`);
-      expect(logs[logs.length - 1]?.userEmail).toBe(
-        `user-${AuditService.MAX_BUFFERED_LOGS + overflow - 1}@example.com`,
+      // The caller is mid-login and does not await this. If the rejection
+      // escaped, a database hiccup would turn a valid login into a 500.
+      expect(() =>
+        service.logAuthEvent({
+          email: 'a@example.com',
+          action: 'login',
+          status: 'success',
+        }),
+      ).not.toThrow();
+      await flush();
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to persist audit log'),
+        expect.any(String),
       );
     });
   });
 
-  describe('getLogs', () => {
-    it('should filter by action and status', () => {
-      logFailure('a@example.com');
-      service.logAuthEvent({
-        email: 'b@example.com',
-        action: 'login',
-        status: 'success',
-      });
+  describe('logUserEvent', () => {
+    it('should persist the event with its changes', async () => {
       service.logUserEvent({
         userId: 'u1',
-        userEmail: 'c@example.com',
-        action: 'user_created',
+        userEmail: 'b@example.com',
+        action: 'role_changed',
+        changes: { from: 'user', to: 'admin' },
         status: 'success',
       });
+      await flush();
 
-      expect(service.getLogs({ action: 'login' })).toHaveLength(2);
-      expect(service.getLogs({ status: 'failure' })).toHaveLength(1);
-      expect(service.getLogs({ userId: 'u1' })).toHaveLength(1);
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'u1',
+          action: 'role_changed',
+          resourceType: 'user',
+          changes: { from: 'user', to: 'admin' },
+        }),
+      );
+    });
+  });
+
+  describe('findLogs', () => {
+    it('should default to the newest 50', async () => {
+      await service.findLogs();
+
+      expect(repository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {},
+          order: { timestamp: 'DESC' },
+          skip: 0,
+          take: 50,
+        }),
+      );
+    });
+
+    it('should translate filters and paging', async () => {
+      await service.findLogs({
+        action: 'login',
+        status: 'failure',
+        userEmail: 'a@example.com',
+        page: 3,
+        limit: 10,
+      });
+
+      expect(repository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            action: 'login',
+            status: 'failure',
+            userEmail: 'a@example.com',
+          },
+          skip: 20,
+          take: 10,
+        }),
+      );
+    });
+
+    it('should build a range when both bounds are given', async () => {
+      const from = new Date('2026-01-01T00:00:00Z');
+      const to = new Date('2026-02-01T00:00:00Z');
+
+      await service.findLogs({ from, to });
+
+      expect(lastFindArgs().where.timestamp).toEqual(Between(from, to));
+    });
+
+    it('should build an open-ended range from a single bound', async () => {
+      const from = new Date('2026-01-01T00:00:00Z');
+
+      await service.findLogs({ from });
+
+      expect(lastFindArgs().where.timestamp).toEqual(MoreThanOrEqual(from));
     });
   });
 
   describe('getFailedLoginAttempts', () => {
-    it('should aggregate failures per email, most frequent first', () => {
-      logFailure('noisy@example.com');
-      logFailure('noisy@example.com');
-      logFailure('quiet@example.com');
-
-      const attempts = service.getFailedLoginAttempts();
-
-      expect(attempts).toEqual([
-        expect.objectContaining({ email: 'noisy@example.com', count: 2 }),
-        expect.objectContaining({ email: 'quiet@example.com', count: 1 }),
+    it('should aggregate in the database and coerce the count', async () => {
+      const lastAttempt = new Date('2026-09-08T10:00:00Z');
+      queryBuilder.getRawMany.mockResolvedValue([
+        { email: 'noisy@example.com', count: '7', lastAttempt },
       ]);
+
+      const result = await service.getFailedLoginAttempts(12);
+
+      expect(result).toEqual([
+        { email: 'noisy@example.com', count: 7, lastAttempt },
+      ]);
+      // pg returns COUNT() as a string; a raw pass-through would break sorting
+      // and comparisons downstream.
+      expect(typeof result[0].count).toBe('number');
     });
 
-    it('should ignore failures outside the time window', () => {
-      logFailure('old@example.com');
-      const logs = service.getLogs();
-      logs[0].timestamp = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    it('should apply the requested time window', async () => {
+      const before = Date.now();
+      await service.getFailedLoginAttempts(6);
 
-      expect(service.getFailedLoginAttempts(24)).toHaveLength(0);
+      const calls = queryBuilder.andWhere.mock.calls as Array<
+        [string, unknown]
+      >;
+      const cutoffCall = calls.find(([clause]) => clause.includes('cutoff'));
+      const { cutoff } = cutoffCall![1] as { cutoff: Date };
+      expect(cutoff.getTime()).toBeLessThanOrEqual(before - 6 * 3600 * 1000);
     });
   });
 });
