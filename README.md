@@ -46,6 +46,7 @@
 - **Role-Based Access Control (RBAC)** — Three built-in roles: `user`, `admin`, and `manager` with route-level protection.
 - **Password Security** — Passwords hashed with **bcrypt** (work factor 12, configurable).
 - **Brute-Force Protection** — Per-IP rate limiting plus per-account lockout after repeated failed logins.
+- **Audit Trail** — Every authentication and user-management event persisted to PostgreSQL, queryable by admins.
 - **Database Migrations** — Versioned schema via TypeORM migrations; `synchronize` never runs outside development.
 - **Input Validation** — Request body validation using `class-validator` with auto-stripping of unknown fields.
 - **Swagger Documentation** — Interactive API docs auto-generated from decorators.
@@ -299,6 +300,26 @@ released, so anyone (including the original owner) can register with it again.
 in the meantime the restore is refused with 409, since two live accounts
 cannot share one: uniqueness is enforced by a partial index over rows where
 `deletedAt IS NULL`.
+
+### Audit (`/audit`)
+
+| Method | Endpoint               | Description                              | Auth Required | Role    |
+|--------|------------------------|------------------------------------------|:-------------:|---------|
+| GET    | `/audit/logs`          | Query the audit trail (paginated)        |      ✅       | `admin` |
+| GET    | `/audit/failed-logins` | Failed attempts per address, busiest first|      ✅       | `admin` |
+
+`/audit/logs` accepts `action`, `status`, `userId`, `userEmail`, `from`, `to`
+(ISO 8601), `page` and `limit` (max 200). `/audit/failed-logins` accepts
+`hours`, capped at 168.
+
+The trail is append-only: there is no route that edits or deletes an entry.
+Both routes are admin-only — the trail records who signed in from where and
+whose role changed.
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:3000/api/v1/audit/logs?action=login&status=failure&limit=20"
+```
 
 ### Service (`/`, `/health`)
 
