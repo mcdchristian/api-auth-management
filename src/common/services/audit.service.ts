@@ -89,7 +89,12 @@ export class AuditService {
   logUserEvent(event: {
     userId: string;
     userEmail: string;
-    action: 'user_created' | 'user_updated' | 'user_deleted' | 'role_changed';
+    action:
+      | 'user_created'
+      | 'user_updated'
+      | 'user_deleted'
+      | 'user_restored'
+      | 'role_changed';
     changes?: Record<string, unknown>;
     status: 'success' | 'failure';
     performedBy?: string;
