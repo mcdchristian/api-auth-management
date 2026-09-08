@@ -23,7 +23,7 @@ This API implements industry-standard security practices for authentication and 
 - ✅ **Password Encryption** - bcrypt hashing
 - ✅ **Refresh Token Storage** - Hashed in database
 - ✅ **SQL Injection Prevention** - TypeORM parameterized queries
-- ✅ **Audit Logging** - Track sensitive operations
+- ✅ **Audit Logging** - Persisted to PostgreSQL, append-only, queryable by admins
 - ✅ **Logging** - Security events logged (login, failed attempts, etc.)
 
 ### Infrastructure
@@ -78,6 +78,32 @@ Two deliberate details:
   discover which addresses are registered.
 - Attempts made **while a lock is already running are not counted**, so the
   expiry cannot be pushed forward indefinitely to keep the real owner out.
+
+### Audit Trail
+
+Every authentication and user-management event is written to `audit_logs`:
+logins (successful and failed), registrations, logouts, token refreshes,
+password changes, and user creation, update, deletion, restoration and role
+changes.
+
+- **Append-only.** Rows are inserted and read, never updated or deleted
+  through the API. A trail that can be edited after the fact is not evidence.
+- **Admin-only to read.** It records who signed in from where and whose role
+  changed — the same material an attacker would use to pick a next target.
+- **Writes never block a request.** Both log calls are issued mid-flow and are
+  not awaited. A failed insert is logged at error level and swallowed, so a
+  database hiccup cannot turn a valid login into a 500. The trade-off is
+  explicit: availability of the auth path over guaranteed capture of every row.
+
+Monitor `GET /audit/failed-logins` for addresses accumulating failures. It
+complements the per-account lockout: the lockout stops a run against one
+account, the summary shows a run spread across many.
+
+Not yet implemented — see the follow-up list at the end of this document:
+
+- Retention and archival policy (rows currently accumulate indefinitely)
+- Alerting on suspicious patterns rather than polling the endpoint
+- Recording which admin performed a user-management action
 
 ### Account Enumeration
 
@@ -158,6 +184,13 @@ ALLOWED_ORIGINS=https://app.example.com,https://www.example.com
 - [ ] Implement password expiration policy
 - [ ] Support two-factor authentication (2FA)
 - [ ] Allow password reset via email
+
+### 8b. Audit Trail Operations
+- [x] Persist the trail outside process memory
+- [x] Expose it to admins for review
+- [ ] Define a retention window and archive beyond it
+- [ ] Alert on failed-login spikes instead of polling
+- [ ] Record the acting admin on user-management events
 
 ### 9. Dependency Management
 ```bash
