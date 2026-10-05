@@ -308,9 +308,19 @@ cannot share one: uniqueness is enforced by a partial index over rows where
 | GET    | `/audit/logs`          | Query the audit trail (paginated)        |      ✅       | `admin` |
 | GET    | `/audit/failed-logins` | Failed attempts per address, busiest first|      ✅       | `admin` |
 
-`/audit/logs` accepts `action`, `status`, `userId`, `userEmail`, `from`, `to`
-(ISO 8601), `page` and `limit` (max 200). `/audit/failed-logins` accepts
-`hours`, capped at 168.
+`/audit/logs` accepts `action`, `status`, `userId`, `userEmail`,
+`performedBy`, `from`, `to` (ISO 8601), `page` and `limit` (max 200).
+`/audit/failed-logins` accepts `hours`, capped at 168.
+
+Each entry distinguishes **who it happened to** (`userId` / `userEmail`) from
+**who did it** (`performedBy` / `performedByEmail`). Self-service actions are
+attributed to the subject, so a NULL actor means one thing only: not captured.
+
+```bash
+# what has this admin done?
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:3000/api/v1/audit/logs?performedBy=$ADMIN_ID"
+```
 
 The trail is append-only: there is no route that edits or deletes an entry.
 Both routes are admin-only — the trail records who signed in from where and
