@@ -39,6 +39,11 @@ export class QueryAuditLogsDto {
   @MaxLength(255)
   userEmail?: string;
 
+  @ApiPropertyOptional({ description: 'Acting user id — what did X do?' })
+  @IsOptional()
+  @IsUUID('4', { message: 'performedBy must be a UUID' })
+  performedBy?: string;
+
   @ApiPropertyOptional({
     description: 'Inclusive lower bound, ISO 8601',
     example: '2026-09-01T00:00:00Z',
