@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { AuditService } from '../common/services/audit.service';
+import type { AuditActor } from '../common/services/audit.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -35,7 +36,7 @@ export class UsersService {
     return bcrypt.hash(plain, this.bcryptRounds);
   }
 
-  async create(userData: Partial<User>): Promise<User> {
+  async create(userData: Partial<User>, actor?: AuditActor): Promise<User> {
     try {
       const existingUser = await this.usersRepository.findOne({
         where: { email: userData.email },
@@ -61,6 +62,8 @@ export class UsersService {
         userEmail: savedUser.email,
         action: 'user_created',
         status: 'success',
+        // Self-registration: the new account is its own actor.
+        performedBy: actor ?? { id: savedUser.id, email: savedUser.email },
       });
 
       return savedUser;
@@ -70,6 +73,7 @@ export class UsersService {
         userEmail: userData.email || 'unknown',
         action: 'user_created',
         status: 'failure',
+        performedBy: actor,
       });
       throw error;
     }
@@ -133,7 +137,11 @@ export class UsersService {
     return { data, total, page, limit };
   }
 
-  async update(id: string, updateData: Partial<User>): Promise<User> {
+  async update(
+    id: string,
+    updateData: Partial<User>,
+    actor?: AuditActor,
+  ): Promise<User> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -151,6 +159,7 @@ export class UsersService {
           userEmail: emailBefore,
           action: 'user_updated',
           status: 'failure',
+          performedBy: actor,
         });
         throw new ConflictException('Email already in use');
       }
@@ -178,6 +187,7 @@ export class UsersService {
           action: 'role_changed',
           changes: { from: roleBefore, to: updateData.role },
           status: 'success',
+          performedBy: actor,
         });
       } else {
         const changes: Record<string, unknown> = {};
@@ -192,6 +202,7 @@ export class UsersService {
           action: 'user_updated',
           changes,
           status: 'success',
+          performedBy: actor,
         });
       }
 
@@ -202,12 +213,13 @@ export class UsersService {
         userEmail: emailBefore,
         action: 'user_updated',
         status: 'failure',
+        performedBy: actor,
       });
       throw error;
     }
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actor?: AuditActor): Promise<void> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -219,6 +231,7 @@ export class UsersService {
         userEmail: user.email,
         action: 'user_deleted',
         status: 'success',
+        performedBy: actor,
       });
     } catch (error) {
       this.auditService.logUserEvent({
@@ -226,6 +239,7 @@ export class UsersService {
         userEmail: user.email,
         action: 'user_deleted',
         status: 'failure',
+        performedBy: actor,
       });
       throw error;
     }
@@ -240,7 +254,7 @@ export class UsersService {
    * level — this reports it as a conflict rather than letting it surface as a
    * constraint violation.
    */
-  async restore(id: string): Promise<User> {
+  async restore(id: string, actor?: AuditActor): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id },
       withDeleted: true,
@@ -264,6 +278,7 @@ export class UsersService {
         userEmail: user.email,
         action: 'user_restored',
         status: 'failure',
+        performedBy: actor,
       });
       throw new ConflictException(
         `Cannot restore: ${user.email} now belongs to an active account`,
@@ -276,6 +291,7 @@ export class UsersService {
       userEmail: user.email,
       action: 'user_restored',
       status: 'success',
+      performedBy: actor,
     });
 
     const restored = await this.findById(id);
