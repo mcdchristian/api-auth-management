@@ -132,6 +132,90 @@ describe('AuditService', () => {
     });
   });
 
+  describe('accountability', () => {
+    const admin = { id: 'admin-1', email: 'admin@example.com' };
+
+    it('should record the acting admin on a role change', async () => {
+      service.logUserEvent({
+        userId: 'u1',
+        userEmail: 'target@example.com',
+        action: 'role_changed',
+        status: 'success',
+        performedBy: admin,
+      });
+      await flush();
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'u1',
+          performedBy: 'admin-1',
+          performedByEmail: 'admin@example.com',
+        }),
+      );
+    });
+
+    it('should attribute a self-service action to the subject', async () => {
+      const self = { id: 'u1', email: 'target@example.com' };
+
+      service.logUserEvent({
+        userId: 'u1',
+        userEmail: 'target@example.com',
+        action: 'user_updated',
+        status: 'success',
+        performedBy: self,
+      });
+      await flush();
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          performedBy: 'u1',
+          performedByEmail: 'target@example.com',
+        }),
+      );
+    });
+
+    it('should leave both columns null when no actor is supplied', async () => {
+      // NULL has to keep exactly one meaning: never captured. Filling in a
+      // placeholder would make old rows indistinguishable from new ones.
+      service.logUserEvent({
+        userId: 'u1',
+        userEmail: 'target@example.com',
+        action: 'user_deleted',
+        status: 'success',
+      });
+      await flush();
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          performedBy: null,
+          performedByEmail: null,
+        }),
+      );
+    });
+
+    it('should treat an auth event as the subject acting on themselves', async () => {
+      service.logAuthEvent({
+        email: 'a@example.com',
+        action: 'login',
+        status: 'success',
+      });
+      await flush();
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          performedBy: null,
+          performedByEmail: 'a@example.com',
+        }),
+      );
+    });
+
+    it('should filter the trail by actor', async () => {
+      await service.findLogs({ performedBy: 'admin-1' });
+
+      expect(lastFindArgs().where.performedBy).toBe('admin-1');
+    });
+  });
+
   describe('findLogs', () => {
     it('should default to the newest 50', async () => {
       await service.findLogs();

@@ -39,6 +39,7 @@ const mockConfigService = () => ({
 describe('UsersService', () => {
   let service: UsersService;
   let repository: ReturnType<typeof mockRepository>;
+  let auditService: ReturnType<typeof mockAuditService>;
 
   const mockUser: Partial<User> = {
     id: '550e8400-e29b-41d4-a716-446655440000',
@@ -62,6 +63,7 @@ describe('UsersService', () => {
 
     service = module.get<UsersService>(UsersService);
     repository = module.get(getRepositoryToken(User));
+    auditService = module.get(AuditService);
   });
 
   afterEach(() => {
@@ -287,6 +289,63 @@ describe('UsersService', () => {
       expect(repository.update).toHaveBeenCalledWith(mockUser.id, {
         refreshToken: null,
       });
+    });
+  });
+
+  describe('actor attribution', () => {
+    const admin = { id: 'admin-1', email: 'admin@example.com' };
+
+    beforeEach(() => {
+      repository.update.mockResolvedValue({ affected: 1 });
+    });
+
+    it('should pass the actor through on delete', async () => {
+      repository.findOne.mockResolvedValue(mockUser);
+      repository.softDelete.mockResolvedValue({ affected: 1 });
+
+      await service.remove(mockUser.id!, admin);
+
+      expect(auditService.logUserEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'user_deleted',
+          performedBy: admin,
+        }),
+      );
+    });
+
+    it('should pass the actor through on a role change', async () => {
+      repository.findOne.mockResolvedValue({
+        ...mockUser,
+        role: UserRole.USER,
+      });
+
+      await service.update(mockUser.id!, { role: UserRole.ADMIN }, admin);
+
+      expect(auditService.logUserEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'role_changed',
+          performedBy: admin,
+        }),
+      );
+    });
+
+    it('should attribute self-registration to the new account', async () => {
+      repository.findOne.mockResolvedValue(null);
+      repository.create.mockReturnValue(mockUser);
+      repository.save.mockResolvedValue(mockUser);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed');
+
+      await service.create({
+        email: mockUser.email,
+        password: 'Password123!',
+      });
+
+      expect(auditService.logUserEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'user_created',
+          performedBy: { id: mockUser.id, email: mockUser.email },
+        }),
+      );
     });
   });
 
