@@ -30,6 +30,8 @@ describe('Audit trail (e2e)', () => {
 
   let adminToken: string;
   let plainToken: string;
+  let adminId: string;
+  let targetId: string;
 
   let ipCounter = 0;
   const nextIp = () => `192.0.2.${(ipCounter++ % 250) + 1}`;
@@ -87,11 +89,16 @@ describe('Audit trail (e2e)', () => {
       { email: adminEmail },
       { role: UserRole.ADMIN },
     );
+    adminId = (await usersRepository.findOne({ where: { email: adminEmail } }))!
+      .id;
 
     const plain = await post('/api/v1/auth/register')
       .send({ email: targetEmail, password })
       .expect(201);
     plainToken = (plain.body as { access_token: string }).access_token;
+    targetId = (await usersRepository.findOne({
+      where: { email: targetEmail },
+    }))!.id;
 
     for (let i = 0; i < failedAttempts; i++) {
       await post('/api/v1/auth/login')
@@ -106,6 +113,7 @@ describe('Audit trail (e2e)', () => {
   afterAll(async () => {
     await auditRepository.delete({ userEmail: adminEmail });
     await auditRepository.delete({ userEmail: targetEmail });
+    await auditRepository.delete({ performedBy: adminId });
     await usersRepository.delete({ email: adminEmail });
     await usersRepository.delete({ email: targetEmail });
     await app.close();
@@ -181,6 +189,59 @@ describe('Audit trail (e2e)', () => {
 
     it('rejects a page size beyond the cap', async () => {
       await asAdmin(get('/api/v1/audit/logs?limit=500')).expect(400);
+    });
+  });
+
+  describe('accountability', () => {
+    it('attributes an admin action to the admin who performed it', async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/v1/users/${targetId}`)
+        .set('X-Forwarded-For', nextIp())
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const found = await auditRepository.findOne({
+          where: { userId: targetId, action: 'user_deleted' },
+        });
+        if (found) {
+          expect(found.performedBy).toBe(adminId);
+          expect(found.performedByEmail).toBe(adminEmail);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error('the deletion was never recorded');
+    });
+
+    it('answers "what did this admin do?" as a query', async () => {
+      const response = await asAdmin(
+        get(`/api/v1/audit/logs?performedBy=${adminId}`),
+      ).expect(200);
+
+      const body = response.body as Paginated<AuditLog>;
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      expect(
+        body.data.every((row) => row.performedByEmail === adminEmail),
+      ).toBe(true);
+    });
+
+    it('attributes self-registration to the account itself', async () => {
+      const response = await asAdmin(
+        get(`/api/v1/audit/logs?userEmail=${targetEmail}&action=user_created`),
+      ).expect(200);
+
+      const body = response.body as Paginated<AuditLog>;
+      expect(body.data[0]).toMatchObject({
+        performedBy: targetId,
+        performedByEmail: targetEmail,
+      });
+    });
+
+    it('rejects a non-UUID actor filter', async () => {
+      await asAdmin(get('/api/v1/audit/logs?performedBy=not-a-uuid')).expect(
+        400,
+      );
     });
   });
 
