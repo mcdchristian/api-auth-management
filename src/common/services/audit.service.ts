@@ -9,10 +9,20 @@ export interface AuditLogFilter {
   status?: AuditStatus;
   userId?: string;
   userEmail?: string;
+  performedBy?: string;
   from?: Date;
   to?: Date;
   page?: number;
   limit?: number;
+}
+
+/**
+ * Who carried an action out. Shaped to accept an AuthenticatedUser directly,
+ * which is what every handler already has on the request.
+ */
+export interface AuditActor {
+  id: string;
+  email: string;
 }
 
 export interface FailedLoginSummary {
@@ -64,6 +74,9 @@ export class AuditService {
       status: event.status,
       reason: event.reason ?? null,
       ipAddress: event.ipAddress ?? null,
+      // An auth event is always the subject acting on themselves.
+      performedBy: null,
+      performedByEmail: event.email,
     });
   }
 
@@ -81,10 +94,17 @@ export class AuditService {
       | 'role_changed';
     changes?: Record<string, unknown>;
     status: AuditStatus;
-    performedBy?: string;
+    performedBy?: AuditActor;
   }): void {
+    // Self-service shows as "by themselves" rather than as an unattributed
+    // action, so a NULL in the column means "never captured", not "unknown".
+    const actor = event.performedBy;
+    const actedOnSelf = actor?.id === event.userId;
+
     this.logger.log(
-      `[AUDIT] ${event.action.toUpperCase()} - User: ${event.userEmail} (${event.userId}) - ${event.status}`,
+      `[AUDIT] ${event.action.toUpperCase()} - User: ${event.userEmail} (${event.userId}) - ${event.status}${
+        actor && !actedOnSelf ? ` - by ${actor.email}` : ''
+      }`,
     );
 
     this.persist({
@@ -97,6 +117,8 @@ export class AuditService {
       status: event.status,
       reason: null,
       ipAddress: null,
+      performedBy: actor?.id ?? null,
+      performedByEmail: actor?.email ?? null,
     });
   }
 
@@ -137,6 +159,7 @@ export class AuditService {
     if (filter.status) where.status = filter.status;
     if (filter.userId) where.userId = filter.userId;
     if (filter.userEmail) where.userEmail = filter.userEmail;
+    if (filter.performedBy) where.performedBy = filter.performedBy;
 
     if (filter.from && filter.to) {
       where.timestamp = Between(filter.from, filter.to);
