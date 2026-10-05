@@ -99,11 +99,22 @@ Monitor `GET /audit/failed-logins` for addresses accumulating failures. It
 complements the per-account lockout: the lockout stops a run against one
 account, the summary shows a run spread across many.
 
+**Attribution.** An entry separates the subject (`userId`, `userEmail`) from
+the actor (`performedBy`, `performedByEmail`), so the trail answers both "what
+happened to this account?" and "what did this admin do?". Self-service is
+attributed to the subject rather than left blank, which keeps NULL meaning
+exactly one thing: never captured. Entries written before this existed keep
+NULL — backfilling a guess into an audit trail is worse than leaving the gap
+visible.
+
+The actor is stored as a plain id, not a foreign key. An audit row has to stay
+readable after the acting account is deleted; a cascade would erase the
+evidence and a restrict would block the deletion.
+
 Not yet implemented — see the follow-up list at the end of this document:
 
 - Retention and archival policy (rows currently accumulate indefinitely)
 - Alerting on suspicious patterns rather than polling the endpoint
-- Recording which admin performed a user-management action
 
 ### Account Enumeration
 
@@ -188,9 +199,9 @@ ALLOWED_ORIGINS=https://app.example.com,https://www.example.com
 ### 8b. Audit Trail Operations
 - [x] Persist the trail outside process memory
 - [x] Expose it to admins for review
+- [x] Record the acting admin on user-management events
 - [ ] Define a retention window and archive beyond it
 - [ ] Alert on failed-login spikes instead of polling
-- [ ] Record the acting admin on user-management events
 
 ### 9. Dependency Management
 ```bash
