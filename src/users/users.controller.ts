@@ -80,7 +80,7 @@ export class UsersController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() updateProfileDto: UpdateProfileDto,
   ) {
-    return this.usersService.update(user.id, updateProfileDto);
+    return this.usersService.update(user.id, updateProfileDto, user);
   }
 
   @Get(':id')
@@ -105,8 +105,9 @@ export class UsersController {
   update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() updateUserDto: UpdateUserDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
-    return this.usersService.update(id, updateUserDto);
+    return this.usersService.update(id, updateUserDto, actor);
   }
 
   @Post(':id/restore')
@@ -122,8 +123,11 @@ export class UsersController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden — requires admin role.' })
-  restore(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.usersService.restore(id);
+  restore(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.restore(id, actor);
   }
 
   @Delete(':id')
@@ -133,7 +137,10 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'User not found.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden — requires admin role.' })
-  remove(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.usersService.remove(id);
+  remove(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.remove(id, actor);
   }
 }
