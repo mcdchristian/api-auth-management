@@ -26,6 +26,8 @@ export type AuditStatus = 'success' | 'failure';
   'timestamp',
 ])
 @Index('IDX_audit_logs_user_id', ['userId'])
+// "what did this admin do?" is the other half of an accountability trail.
+@Index('IDX_audit_logs_performed_by', ['performedBy'])
 export class AuditLog {
   @PrimaryGeneratedColumn('uuid')
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
@@ -62,6 +64,27 @@ export class AuditLog {
   @Column({ type: 'varchar', nullable: true })
   @ApiPropertyOptional({ example: '203.0.113.7' })
   ipAddress: string | null;
+
+  /**
+   * Who carried the action out, as opposed to `userId`, which is who it was
+   * carried out on. Null for self-service actions and for anything the system
+   * does on its own behalf.
+   *
+   * Stored as a plain id rather than a foreign key: an audit row has to stay
+   * readable after the acting account is deleted, and a cascade or a
+   * restrict would either erase the evidence or block the deletion.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  @ApiPropertyOptional({ description: 'Acting user id, when not self-service' })
+  performedBy: string | null;
+
+  /**
+   * Denormalised on purpose. The id alone needs a join to mean anything, and
+   * the account it points at may be gone by the time anyone reads the row.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  @ApiPropertyOptional({ example: 'admin@example.com' })
+  performedByEmail: string | null;
 
   @Column({ type: 'varchar' })
   @ApiProperty({ enum: ['success', 'failure'] })
